@@ -15,6 +15,10 @@ import (
 	"sync"
 )
 
+const (
+	IF_PREFIX = "vdedocker"
+)
+
 type VDENetworkEndpoint struct {
 	// vde_plug2tap cmd. nil if no container has actually attached yet.
 	tapPlugCmd  *exec.Cmd
@@ -270,6 +274,15 @@ func (this *VDENetworkDriver) Join(req *network.JoinRequest) (*network.JoinRespo
 	// HOWTO: this gets tricky. We need to make a veth pair, then bridge the host side to a tap interface, which in turn
 	// should be connected to the VDE socket. It's a lot of plate spinning, and I can't really see a way to get
 	// DHCP to work out of this.
+	// UPDATE: I'm less sure about this now - maybe we can get away with it because it does work with OpenVPN...
+
+	tapDevName := IF_PREFIX + req.EndpointID
+
+	if err := fsutil.CheckExec("ip", "tuntap", "add", "dev", tapDevName, "mode", "tap"); err != nil {
+		return nil, errors.New("Error creating tap device")
+	}
+
+	fsutil.CheckExec("ip", "link", "set", "dev")
 }
 
 func (this *VDENetworkDriver) Leave(req *network.LeaveRequest) error {
