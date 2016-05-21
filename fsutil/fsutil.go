@@ -73,6 +73,14 @@ func PathNotExist(path string) bool {
 	return false
 }
 
+func PathIsDir(path string) bool {
+	st, err := os.Stat(path);
+	if os.IsNotExist(err) {
+		return false
+	}
+	return st.IsDir()
+}
+
 // Check for successful execution and return stdout and stderr as strings
 func CheckExecWithOutput(command string, commandLine ...string) (string, string, error) {
 	log.Debugln("Executing Command:", command, commandLine)

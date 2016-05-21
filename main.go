@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"fmt"
 )
 
 const (
@@ -22,8 +23,8 @@ const (
 type VDENetworkEndpoint struct {
 	// vde_plug2tap cmd. nil if no container has actually attached yet.
 	tapPlugCmd  *exec.Cmd
-	address     net.IPAddr
-	addressIPv6 net.IPAddr
+	address     net.IP
+	addressIPv6 net.IP
 	macAddress  net.HardwareAddr
 }
 
@@ -75,9 +76,9 @@ func (this *VDENetworkDriver) networkExists(networkId string) bool {
 	return found
 }
 
-func (this *VDENetworkDriver) GetCapabilities() (network.CapabilitiesResponse, error) {
+func (this *VDENetworkDriver) GetCapabilities() (*network.CapabilitiesResponse, error) {
 	// Technically, VDE can be global, but we have no way to know that.
-	return network.CapabilitiesResponse{Scope: network.LocalScope}, nil
+	return &network.CapabilitiesResponse{Scope: network.LocalScope}, nil
 }
 
 func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) error {
@@ -150,7 +151,7 @@ func (this *VDENetworkDriver) DeleteNetwork(req *network.DeleteNetworkRequest) e
 
 func (this *VDENetworkDriver) CreateEndpoint(req *network.CreateEndpointRequest) (*network.CreateEndpointResponse, error) {
 	if !this.networkExists(req.NetworkID) {
-		return errors.New("Network does not exist")
+		return nil, errors.New("Network does not exist")
 	}
 	// Grab the network and hold onto it till we finish. This is so no-one deletes it while we're setting up an endpoint.
 	this.mtx.RLock()
@@ -199,7 +200,7 @@ func (this *VDENetworkDriver) CreateEndpoint(req *network.CreateEndpointRequest)
 		Interface: &network.EndpointInterface{
 			MacAddress: macAddress.String(),
 		},
-	}
+	}, nil
 }
 
 func (this *VDENetworkDriver) DeleteEndpoint(req *network.DeleteEndpointRequest) error {
@@ -212,7 +213,7 @@ func (this *VDENetworkDriver) DeleteEndpoint(req *network.DeleteEndpointRequest)
 	vdeNetwork, _ := this.networks[req.NetworkID]
 	// Check the endpoint exists
 	if !vdeNetwork.EndpointExists(req.EndpointID) {
-		return nil, errors.New("Endpoint does not exist")
+		return errors.New("Endpoint does not exist")
 	}
 	// Grab the endpoint and hold onto it till we're done
 	vdeNetwork.mtx.Lock()
@@ -224,6 +225,7 @@ func (this *VDENetworkDriver) DeleteEndpoint(req *network.DeleteEndpointRequest)
 	}
 	// Delete the endpoint
 	delete(vdeNetwork.networkEndpoints, req.EndpointID)
+	return nil
 }
 
 func (this *VDENetworkDriver) EndpointInfo(req *network.InfoRequest) (*network.InfoResponse, error) {
@@ -240,7 +242,7 @@ func (this *VDENetworkDriver) EndpointInfo(req *network.InfoRequest) (*network.I
 	}
 	vdeNetwork.mtx.RLock()
 	defer vdeNetwork.mtx.RUnlock()
-	endpoint, _ := this.networks[req.EndpointID]
+	//endpoint, _ := this.networks[req.EndpointID]
 
 	r := &network.InfoResponse{
 		Value: make(map[string]string),
@@ -249,14 +251,14 @@ func (this *VDENetworkDriver) EndpointInfo(req *network.InfoRequest) (*network.I
 	// Return information about the switch this is connected to
 	r.Value["SwitchSocketDirectory"] = vdeNetwork.sockDir
 	r.Value["SwitchManagementSocket"] = vdeNetwork.mgmtSock
-	r.Value["SwitchPID"] = vdeNetwork.switchp.Process.Pid
+	r.Value["SwitchPID"] = string(vdeNetwork.switchp.Process.Pid)
 
 	return r, nil
 }
 
 func (this *VDENetworkDriver) Join(req *network.JoinRequest) (*network.JoinResponse, error) {
 	if !this.networkExists(req.NetworkID) {
-		return errors.New("Network does not exist")
+		return nil, errors.New("Network does not exist")
 	}
 	// Grab the network and hold onto it till we finish. This is so no-one deletes it while we're setting up an endpoint.
 	this.mtx.RLock()
@@ -282,11 +284,46 @@ func (this *VDENetworkDriver) Join(req *network.JoinRequest) (*network.JoinRespo
 		return nil, errors.New("Error creating tap device")
 	}
 
-	fsutil.CheckExec("ip", "link", "set", "dev")
+	failedDeviceSetup := new(bool)
+	*failedDeviceSetup = true
+	defer func() {
+		if *failedDeviceSetup {
+			if err := fsutil.CheckExec("ip", "link", "delete", "dev", tapDevName); err != nil {
+				log.Errorln("Error removing created tap device:", tapDevName)
+			}
+		}
+	}()
+
+	if err := fsutil.CheckExec("ip", "link", "set", "dev", tapDevName, "address", vdeEndpoint.macAddress.String() ); err != nil {
+		return nil, errors.New("Error setting MAC address")
+	}
+
+	if err := fsutil.CheckExec("ip", "link", "set", "dev", tapDevName, "up"); err != nil {
+		return nil, errors.New("Error setting device up")
+	}
+
+	if !vdeEndpoint.address.IsUnspecified() {
+		if err := fsutil.CheckExec("ip", "address", "add", vdeEndpoint.address.String(), "dev", tapDevName); err != nil {
+			return nil, errors.New(fmt.Sprintln("Error setting IPv4 address:", vdeEndpoint.address.String()))
+		}
+	}
+
+	if !vdeEndpoint.addressIPv6.IsUnspecified() {
+		if err := fsutil.CheckExec("ip", "address", "add", vdeEndpoint.addressIPv6.String(), "dev", tapDevName); err != nil {
+			return nil, errors.New(fmt.Sprintln("Error setting IPv6 address:", vdeEndpoint.addressIPv6.String()))
+		}
+	}
+
+	r := &network.JoinResponse{
+		InterfaceName: network.InterfaceName{tapDevName,""},
+	}
+
+	return r, nil
 }
 
 func (this *VDENetworkDriver) Leave(req *network.LeaveRequest) error {
-
+	log.Warnln("Unimplemented method called!")
+	return nil
 }
 
 func (this *VDENetworkDriver) DiscoverNew(req *network.DiscoveryNotification) error {
@@ -296,6 +333,16 @@ func (this *VDENetworkDriver) DiscoverNew(req *network.DiscoveryNotification) er
 
 func (this *VDENetworkDriver) DiscoverDelete(req *network.DiscoveryNotification) error {
 	log.Debugln("Received discovery delete:", req)
+	return nil
+}
+
+func (this *VDENetworkDriver) ProgramExternalConnectivity(req *network.ProgramExternalConnectivityRequest) error {
+	log.Errorln("Unimplmented function called")
+	return nil
+}
+
+func (this *VDENetworkDriver) RevokeExternalConnectivity(req *network.RevokeExternalConnectivityRequest) error {
+	log.Errorln("Unimplmented function called")
 	return nil
 }
 
@@ -316,7 +363,7 @@ func main() {
 	log.Infoln("VDE Network Socket Directory:", *socketRoot)
 	log.Infoln("Docker Plugin Path:", *dockerPluginPath)
 
-	driver := VDENetworkDriver{}
+	driver := &VDENetworkDriver{}
 	handler := network.NewHandler(driver)
 
 	handler.ServeUnix("root", "vde2")
