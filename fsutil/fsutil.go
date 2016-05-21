@@ -150,6 +150,17 @@ func CheckExecWithEnv(env []string, command string, commandLine ...string) error
 	return nil
 }
 
+// Returns a command object which logs its stdout/stderr
+func LoggedCommand(command string, commandLine ...string) *exec.Cmd {
+	log.Debugln("Executing Command:", command, commandLine)
+	cmd := exec.Command(command, commandLine...)
+
+	cmd.Stdout = NewLogWriter(log.With("pipe", "stdout").With("cmd", command).Debugln)
+	cmd.Stderr = NewLogWriter(log.With("pipe", "stderr").With("cmd", command).Debugln)
+
+	return cmd
+}
+
 // Checks for successful execution. Logs all output at default level.
 func CheckExec(command string, commandLine ...string) error {
 	log.Debugln("Executing Command:", command, commandLine)
