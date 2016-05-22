@@ -467,7 +467,7 @@ func (this *VDENetworkDriver) DeleteNetwork(req *network.DeleteNetworkRequest) e
 		network.switchp.Process.Kill()
 		network.switchp.Wait()
 		// Delete socket directories only if we controlled the process to start with
-		//os.RemoveAll(network.sockDir)
+		os.RemoveAll(network.sockDir)
 		os.Remove(network.mgmtSock)
 	}
 	delete(this.networks, req.NetworkID)
