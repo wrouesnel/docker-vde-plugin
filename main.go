@@ -7,38 +7,101 @@ import (
 	"github.com/docker/go-plugins-helpers/network"
 	"github.com/wrouesnel/go.log"
 
+	"flag"
+	"fmt"
 	"github.com/wrouesnel/docker-vde-plugin/fsutil"
+	"github.com/ziutek/utils/netaddr"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"sync"
-	"fmt"
-	"flag"
-	"io"
-	//"encoding/hex"
-	//"encoding/base64"
 )
 
 const (
-	IF_PREFIX = "vdep"
+	PluginName string = "vde"
+)
+
+const (
+	InterfacePrefix string = "vdenet"
+)
+
+// Option parameters we recognize for networks
+const (
+	// Specifies an existing VDE switch to associate with a network
+	NetworkOptionSwitchSocket string = "socket_dir"
+	// Specifies the existing VDE switches management socket.
+	// Can be left out (management options will not work from the driver)
+	NetworkOptionSwitchManagementSocket string = "management_socket"
+	// Specifies that if the supplied sockets do not exist, they should be
+	// used as the paths for a new vde_switch for the network.
+	NetworkOptionsAllowCreate string = "create_sockets"
+	// Specify the group owner for the created socket.
+	NetworkOptionsSocketGroup string = "socket_group"
 )
 
 type VDENetworkEndpoint struct {
 	// vde_plug2tap cmd. nil if no container has actually attached yet.
-	tapPlugCmd  *exec.Cmd
-	tapCmdPipe	io.WriteCloser
+	tapPlugCmd *exec.Cmd
+	tapCmdPipe io.WriteCloser
 	// IPv4 address if assigned
-	address     net.IP
-	addressNet	net.IPNet
+	address    net.IP
+	addressNet net.IPNet
 	// IPv6 address if assigned
-	address6	net.IP
+	address6    net.IP
 	addressNet6 net.IPNet
 	// Hardware address (always assigned)
-	macAddress  net.HardwareAddr
+	macAddress net.HardwareAddr
+	// Gateways
+	gateway  net.IP
+	gateway6 net.IP
 	// Current tap device. Empty means no tap currently instantiated.
-	tapDevName  string
+	tapDevName string
+}
 
+// Hard terminate the tap command feeding data to the tap interface, if it's
+// runnning.
+func (this *VDENetworkEndpoint) KillTapCmd() {
+	if this.tapCmdPipe != nil {
+		this.tapCmdPipe.Close()
+		this.tapCmdPipe = nil
+	}
+
+	if this.tapPlugCmd == nil {
+		return
+	}
+
+	// Kill and collect status
+	this.tapPlugCmd.Process.Kill()
+	this.tapPlugCmd.Wait()
+	this.tapPlugCmd = nil
+}
+
+func (this *VDENetworkEndpoint) DeleteTapDevice() {
+	if this.tapDevName == "" {
+		return
+	}
+	err := fsutil.CheckExec("ip", "link", "delete", "dev", this.tapDevName)
+	// Remove the interface
+	if err != nil {
+		log.Errorln("Error removing tap device:", this.tapDevName)
+	}
+	this.tapDevName = ""
+}
+
+func (this *VDENetworkEndpoint) GetIPv4Gateway() string {
+	if this.gateway == nil {
+		return ""
+	}
+	return this.gateway.String()
+}
+
+func (this *VDENetworkEndpoint) GetIPv6Gateway() string {
+	if this.gateway6 == nil {
+		return ""
+	}
+	return this.gateway6.String()
 }
 
 // Returns a stringified CIDR-notation address for the IPv4 address of the endpoint
@@ -78,18 +141,118 @@ func (this *VDENetworkEndpoint) GetMACAddress() string {
 
 type VDENetworkEndpoints map[string]*VDENetworkEndpoint
 
+// Represents a golang formatted IPAM network pool
+type IPAMNetworkPool struct {
+	addressSpace string
+	pool         net.IPNet
+	gateway      net.IP
+}
+
+// Returns a driver IPAMNetworkPool
+func NewIPAMNetworkPool(inp *network.IPAMData) (IPAMNetworkPool, error) {
+	_, poolNetwork, err := net.ParseCIDR(inp.Pool)
+	if err != nil {
+		log.Errorln("Supplied CIDR is unparseable:", inp.Pool)
+		return IPAMNetworkPool{}, errors.New("Could not parse IPAM address pool")
+	}
+
+	if poolNetwork == nil {
+		log.Errorln("Supplied CIDR did not include a network", inp.Pool)
+		return IPAMNetworkPool{}, errors.New("Could not parse IPAM address pool")
+	}
+
+	ip := net.ParseIP(inp.Gateway)
+	if ip == nil {
+		log.Errorln("Supplied Gateway was unparseable", inp.Gateway)
+		return IPAMNetworkPool{}, errors.New("Could not parse IPAM gateway")
+	}
+
+	return IPAMNetworkPool{
+		addressSpace: inp.AddressSpace,
+		pool:         *poolNetwork,
+		gateway:      ip,
+	}, nil
+}
+
 type VDENetworkDesc struct {
 	sockDir  string
 	mgmtSock string
 	mgmtPipe io.WriteCloser
 	// vde_switch process
 	switchp *exec.Cmd
-	// network creation data which made this network
-	createData *network.CreateNetworkRequest
+	// IPAM data for this network
+	pool4 []IPAMNetworkPool
+	pool6 []IPAMNetworkPool
 	// Currently executed vde_plug2tap processes
 	networkEndpoints VDENetworkEndpoints
 	// Mutex for networkEndpoints
 	mtx sync.RWMutex
+}
+
+// For a given IP, find a suitable gateway IP in the current network. Return nil
+// if nothing suitable is found.
+func (this *VDENetworkDesc) GetGateway(ip net.IP) net.IP {
+	var searchPool []IPAMNetworkPool
+	if ip.To4() != nil {
+		// IPv4 address
+		searchPool = this.pool4
+	} else {
+		// IPv6 address
+		searchPool = this.pool6
+	}
+
+	// Check if our IP is contained in the subpool
+	for _, subpool := range searchPool {
+		if subpool.pool.Contains(ip) {
+			return subpool.gateway
+		}
+	}
+
+	return nil
+}
+
+// Get a free IP. Not safe unless the network is locked while doing so.
+// Returns nil if no IP can be found. Does not account for other IPs which
+// may be on this network.
+func (this *VDENetworkDesc) GetFreeIPv4() net.IP {
+	// This is inefficient and should be abstracted to a global hash in future
+	usedIPv4 := make(map[string]interface{})
+	for _, endpoint := range this.networkEndpoints {
+		usedIPv4[endpoint.address.String()] = nil
+	}
+
+	// Probe the map with incrementing IPs still we find one we can use
+	for _, pool := range this.pool4 {
+		for ip := pool.pool.IP.Mask(pool.pool.Mask); pool.pool.Contains(ip); netaddr.IPAdd(ip, 1) {
+			if _, found := usedIPv4[ip.String()]; !found {
+				return ip
+			}
+		}
+	}
+
+	return nil
+}
+
+// Get a free IP. Not safe unless the network is locked while doing so.
+// Returns nil if no IP can be found. Does not account for other IPs which
+// may be on this network.
+func (this *VDENetworkDesc) GetFreeIPv6() net.IP {
+	// This is inefficient and should be abstracted to a global hash in future
+	usedIPv6 := make(map[string]interface{})
+	for _, endpoint := range this.networkEndpoints {
+		usedIPv6[endpoint.address.String()] = nil
+	}
+
+	// Probe the map with incrementing IPs still we find one we can use
+	for _, pool := range this.pool6 {
+		for ip := pool.pool.IP.Mask(pool.pool.Mask); pool.pool.Contains(ip); netaddr.IPAdd(ip, 1) {
+			if _, found := usedIPv6[ip.String()]; !found {
+				return ip
+			}
+		}
+	}
+
+	return nil
 }
 
 func (this *VDENetworkDesc) EndpointExists(endpointId string) bool {
@@ -150,44 +313,122 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 			With("Gateway", ipData.Gateway).
 			With("Pool", ipData.Pool).Debugln("IPv6 Network Options")
 	}
-
+	netOptionsLogs := log
+	for k, v := range req.Options {
+		netOptionsLogs = netOptionsLogs.With(k, v)
+	}
+	netOptionsLogs.Debugln("Network options")
 	// Check our state at a high level to see if we can make a new network.
 	if this.networkExists(req.NetworkID) {
 		return errors.New("Network already exists.")
 	}
-	// Check the socket network dir can be made
-	// FIXME: handle name collisions
-	var realnetDir string
-	{
+
+	// Parse network creation options
+	var socketName string
+	var managementSocketName string
+	var createSockets string
+	var socketGroup string
+	if req.Options != nil {
+		socketName, _ = req.Options[NetworkOptionSwitchSocket].(string)
+		managementSocketName, _ = req.Options[NetworkOptionSwitchManagementSocket].(string)
+		createSockets, _ = req.Options[NetworkOptionsAllowCreate].(string)
+		socketGroup, _ = req.Options[NetworkOptionsSocketGroup].(string)
+	}
+
+	pool4 := make([]IPAMNetworkPool, 0)
+	pool6 := make([]IPAMNetworkPool, 0)
+
+	// Parse network IP data.
+	for _, ipampool := range req.IPv4Data {
+		driverPool, err := NewIPAMNetworkPool(ipampool)
+		if err != nil {
+			return err
+		}
+		pool4 = append(pool4, driverPool)
+	}
+
+	for _, ipampool := range req.IPv6Data {
+		driverPool, err := NewIPAMNetworkPool(ipampool)
+		if err != nil {
+			return err
+		}
+		pool6 = append(pool6, driverPool)
+	}
+
+	// There's a few options here:
+	// - make a socket in the default location
+	// - use an existing named socket
+	// - create a socket in a specified location
+
+	if socketName == "" {
 		incrementNumber := 0
-		netDir := this.getNetworkSocketDirName(req.NetworkID)
-		realnetDir = netDir
-		for fsutil.PathExists(netDir) {
-			realnetDir = netDir + fmt.Sprintf("_%d", incrementNumber)
-			log.Debugln("Truncated networkID exists, trying a suffix:", netDir)
+		baseSocketName := this.getNetworkSocketDirName(req.NetworkID)
+		socketName = baseSocketName
+		for fsutil.PathExists(socketName) {
+			socketName = baseSocketName + fmt.Sprintf("_%d", incrementNumber)
+			log.Debugln("Truncated networkID exists, trying a new suffix:", socketName)
 			incrementNumber++
 		}
+		log.Infoln("Creating new vde_switch with socket path:", socketName)
+		// Force create_sockets to true
+		createSockets = "true"
+		managementSocketName = socketName + ".mgmt.sock"
+	} else if socketName != "" && createSockets == "" {
+		// Check the existing socket is a directory with a ctl socket in it
+		if !fsutil.PathIsDir(socketName) {
+			log.Errorln("Existing socket directory for network switch does not exist:", socketName)
+			return errors.New("Supplied existing socket directory does not exist")
+		}
+		// Check there's a ctl socket in it
+		if !fsutil.PathIsSocket(filepath.Join(socketName, "ctl")) {
+			log.Errorln("Existing socket directory does not appear to be a vde_switch directory", socketName)
+			return errors.New("Existing socket directory does not appear to be a vde_switch directory")
+		}
+		log.Infoln("Using existing socket for network:", socketName)
+		// Throw a warning if the management socket doesn't exist
+		if !fsutil.PathIsSocket(managementSocketName) {
+			log.Warnln("Specified management socket doesn't exist! Some functions will not work.")
+		}
+	} else {
+		// Generate a management socket name if one wasn't specified
+		if managementSocketName == "" {
+			managementSocketName = socketName + ".mgmt.sock"
+		}
+		log.Infoln("Creating new vde_switch with given socket path:", socketName)
 	}
-	// Check the management socket can be made
-	mgmtSock := realnetDir + ".mgmt.sock"
 
-	// Start the VDE switch for the new network
-	cmd := fsutil.LoggedCommand("vde_switch", "--sock", realnetDir, "--mgmt", mgmtSock)
-	mgmtPipe, err := cmd.StdinPipe()
-	if err != nil {
-		return errors.New("Error setting up stdin pipe for vde_switch.")
+	var cmd *exec.Cmd
+	var mgmtPipe io.WriteCloser
+	if createSockets != "" {
+		var err error
+		// Start the VDE switch for the new network
+		cmdArgs := []string{
+			"--sock", socketName,
+			"--mgmt", managementSocketName}
+
+		// If group specified, add it
+		if socketGroup != "" {
+			cmdArgs = append(cmdArgs, "--group", socketGroup)
+		}
+
+		cmd := fsutil.LoggedCommand("vde_switch", cmdArgs...)
+		mgmtPipe, err = cmd.StdinPipe()
+		if err != nil {
+			return errors.New("Error setting up stdin pipe for vde_switch.")
+		}
+		if err := cmd.Start(); err != nil {
+			return errors.New("Error starting vde_switch for network.")
+		}
 	}
 
-	if err := cmd.Start(); err != nil {
-		return errors.New("Error starting vde_switch for network.")
-	}
 	// Stash the network info
 	network := VDENetworkDesc{
-		sockDir:          realnetDir,
-		mgmtSock:         mgmtSock,
-		mgmtPipe:		  mgmtPipe,
+		sockDir:          socketName,
+		mgmtSock:         managementSocketName,
+		mgmtPipe:         mgmtPipe,
 		switchp:          cmd,
-		createData:       req,
+		pool4:            pool4,
+		pool6:            pool6,
 		networkEndpoints: make(VDENetworkEndpoints),
 	}
 
@@ -195,8 +436,9 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 	this.mtx.Lock()
 	defer this.mtx.Unlock()
 	this.networks[req.NetworkID] = &network
-	log.Infoln("Created new network:", req.NetworkID,
-		"Socket Directory:", realnetDir, "Management Socket:", mgmtSock)
+	log.With(NetworkOptionSwitchSocket, socketName).
+		With(NetworkOptionSwitchManagementSocket, managementSocketName).
+		Infoln("Created new network")
 	return nil
 }
 
@@ -216,14 +458,18 @@ func (this *VDENetworkDriver) DeleteNetwork(req *network.DeleteNetworkRequest) e
 		return errors.New("Network still in-use!")
 	}
 
-	// Kill the vde_switch process
-	network.mgmtPipe.Close()
-	network.switchp.Process.Kill()
-	network.switchp.Wait()
-	// Delete socket directories
-	os.RemoveAll(network.sockDir)
-	os.Remove(network.mgmtSock)
+	// Kill the vde_switch process if we're in control of it.
+	if network.mgmtPipe != nil {
+		network.mgmtPipe.Close()
+	}
 
+	if network.switchp != nil {
+		network.switchp.Process.Kill()
+		network.switchp.Wait()
+		// Delete socket directories only if we controlled the process to start with
+		os.RemoveAll(network.sockDir)
+		os.Remove(network.mgmtSock)
+	}
 	delete(this.networks, req.NetworkID)
 
 	return nil
@@ -246,7 +492,8 @@ func (this *VDENetworkDriver) CreateEndpoint(req *network.CreateEndpointRequest)
 	if !this.networkExists(req.NetworkID) {
 		return nil, errors.New("Network does not exist")
 	}
-	// Grab the network and hold onto it till we finish. This is so no-one deletes it while we're setting up an endpoint.
+	// Grab the network and hold onto it till we finish.
+	// This is so no-one deletes it while we're setting up an endpoint.
 	this.mtx.RLock()
 	defer this.mtx.RUnlock()
 	vdeNetwork, _ := this.networks[req.NetworkID]
@@ -293,6 +540,8 @@ func (this *VDENetworkDriver) CreateEndpoint(req *network.CreateEndpointRequest)
 		log.Debugln("Generated MAC Address:", endpoint.GetMACAddress())
 	}
 
+	// Figure out which gateway we want to use for the IPs we've picked
+
 	// Add the endpoint to the network
 	vdeNetwork.mtx.Lock()
 	defer vdeNetwork.mtx.Unlock()
@@ -326,10 +575,12 @@ func (this *VDENetworkDriver) DeleteEndpoint(req *network.DeleteEndpointRequest)
 	vdeNetwork.mtx.Lock()
 	defer vdeNetwork.mtx.Unlock()
 	vdeEndpoint, _ := vdeNetwork.networkEndpoints[req.EndpointID]
-	// Kill the endpoint
-	if vdeEndpoint.tapPlugCmd != nil {
-		vdeEndpoint.tapPlugCmd.Process.Kill()
-	}
+
+	// It's possible the endpoint is being killed while it's "Joined" - so ensure
+	// we clean up it's processes.
+	vdeEndpoint.KillTapCmd()
+	vdeEndpoint.DeleteTapDevice()
+
 	// Delete the endpoint
 	delete(vdeNetwork.networkEndpoints, req.EndpointID)
 	return nil
@@ -349,16 +600,30 @@ func (this *VDENetworkDriver) EndpointInfo(req *network.InfoRequest) (*network.I
 	}
 	vdeNetwork.mtx.RLock()
 	defer vdeNetwork.mtx.RUnlock()
-	//endpoint, _ := this.networks[req.EndpointID]
+	vdeEndpoint, _ := vdeNetwork.networkEndpoints[req.EndpointID]
 
 	r := &network.InfoResponse{
 		Value: make(map[string]string),
 	}
 
 	// Return information about the switch this is connected to
-	r.Value["SwitchSocketDirectory"] = vdeNetwork.sockDir
-	r.Value["SwitchManagementSocket"] = vdeNetwork.mgmtSock
-	r.Value["SwitchPID"] = string(vdeNetwork.switchp.Process.Pid)
+	r.Value["socket_dir"] = vdeNetwork.sockDir
+	r.Value["management_socket"] = vdeNetwork.mgmtSock
+	if vdeNetwork.switchp != nil {
+		r.Value["switch_pid"] = string(vdeNetwork.switchp.Process.Pid)
+		r.Value["create_sockets"] = ""
+	} else {
+		r.Value["switch_pid"] = ""
+		r.Value["create_sockets"] = "true"
+	}
+
+	if vdeEndpoint.tapPlugCmd != nil {
+		r.Value["plug_pid"] = string(vdeEndpoint.tapPlugCmd.Process.Pid)
+	} else {
+		r.Value["plug_pid"] = ""
+	}
+
+	r.Value["tap_device"] = vdeEndpoint.tapDevName
 
 	return r, nil
 }
@@ -383,15 +648,10 @@ func (this *VDENetworkDriver) Join(req *network.JoinRequest) (*network.JoinRespo
 	defer vdeNetwork.mtx.Unlock()
 	vdeEndpoint, _ := vdeNetwork.networkEndpoints[req.EndpointID]
 
-	// HOWTO: this gets tricky. We need to make a veth pair, then bridge the host side to a tap interface, which in turn
-	// should be connected to the VDE socket. It's a lot of plate spinning, and I can't really see a way to get
-	// DHCP to work out of this.
-	// UPDATE: I'm less sure about this now - maybe we can get away with it because it does work with OpenVPN...
-
 	// It shouldn't really be possible to get here. For now fail, in future,
 	// maybe blow away the old endpoint if it's hanging around?
 	if vdeEndpoint.tapDevName == "" {
-		vdeEndpoint.tapDevName = IF_PREFIX + req.EndpointID[:11]
+		vdeEndpoint.tapDevName = InterfacePrefix + req.EndpointID[:11]
 	} else {
 		log.Errorln("Tap device still exists for endpoint:", vdeEndpoint.tapDevName)
 		return nil, errors.New("Tap device still exists for endpoint")
@@ -411,7 +671,7 @@ func (this *VDENetworkDriver) Join(req *network.JoinRequest) (*network.JoinRespo
 		}
 	}()
 
-	if err := fsutil.CheckExec("ip", "link", "set", "dev", vdeEndpoint.tapDevName, "address", vdeEndpoint.macAddress.String() ); err != nil {
+	if err := fsutil.CheckExec("ip", "link", "set", "dev", vdeEndpoint.tapDevName, "address", vdeEndpoint.macAddress.String()); err != nil {
 		return nil, errors.New("Error setting MAC address")
 	}
 
@@ -448,7 +708,9 @@ func (this *VDENetworkDriver) Join(req *network.JoinRequest) (*network.JoinRespo
 	*failedDeviceSetup = false
 
 	r := &network.JoinResponse{
-		InterfaceName: network.InterfaceName{vdeEndpoint.tapDevName,IF_PREFIX},
+		InterfaceName: network.InterfaceName{vdeEndpoint.tapDevName, InterfacePrefix},
+		Gateway:       vdeEndpoint.GetIPv4Gateway(),
+		GatewayIPv6:   vdeEndpoint.GetIPv6Gateway(),
 	}
 
 	return r, nil
@@ -476,18 +738,10 @@ func (this *VDENetworkDriver) Leave(req *network.LeaveRequest) error {
 	vdeEndpoint.tapPlugCmd.Process.Kill()
 	vdeEndpoint.tapPlugCmd.Wait()
 
-	if vdeEndpoint.tapDevName != "" {
-		// Remove the interface
-		if err := fsutil.CheckExec("ip", "link", "delete", "dev", vdeEndpoint.tapDevName); err != nil {
-			log.Errorln("Error removing created tap device:", vdeEndpoint.tapDevName)
-			return errors.New("Failed removing the created tap device")
-		}
-	} else {
-		return errors.New("Endpoint has no assigned interface.")
-	}
-
-	// Tap device is removed
-	vdeEndpoint.tapDevName = ""
+	// Strictly speaking we should remove the endpoint here. However, it's not
+	// in the root namespace yet and we don't know where it is. As a kind of
+	// hacky work-around, we rely on the fact that DeleteEndpoint will be called
+	// right after this, and delete it there, when it should be back.
 
 	return nil
 }
@@ -515,17 +769,27 @@ func (this *VDENetworkDriver) RevokeExternalConnectivity(req *network.RevokeExte
 func NewVDENetworkDriver(socketRoot string) *VDENetworkDriver {
 	return &VDENetworkDriver{
 		socketRoot: socketRoot,
-		networks: make(map[string]*VDENetworkDesc),
+		networks:   make(map[string]*VDENetworkDesc),
 	}
 }
 
+// TODO: do some checks to make sure we properly clean up
 func main() {
 	dockerPluginPath := kingpin.Flag("docker-net-plugins", "Listen path for the plugin.").Default("unix:///run/docker/plugins/vde.sock").URL()
-	socketRoot := kingpin.Flag("socket-root", "Path where networks and sockets should be created").Default("vde").String()
+	socketRoot := kingpin.Flag("socket-root", "Path where networks and sockets should be created").Default("/run/docker-vde-plugin").String()
 	loglevel := kingpin.Flag("log-level", "Logging Level").Default("info").String()
+	logformat := kingpin.Flag("log-level", "If set use a syslog logger or JSON logging. Example: logger:syslog?appname=bob&local=7 or logger:stdout?json=true. Defaults to stderr.").Default("stderr").String()
 	kingpin.Parse()
 
+	// Check for the programs we need to actually work
+	fsutil.MustLookupPaths(
+		"ip",
+		"vde_switch",
+		"vde_plug2tap",
+	)
+
 	flag.Set("log.level", *loglevel)
+	flag.Set("log.format", *logformat)
 
 	if !fsutil.PathExists(*socketRoot) {
 		err := os.MkdirAll(*socketRoot, os.FileMode(0777))
@@ -536,11 +800,11 @@ func main() {
 		log.Panicln("socket-root exists but is not a directory.")
 	}
 
-	log.Infoln("VDE Network Socket Directory:", *socketRoot)
+	log.Infoln("VDE default socket directories:", *socketRoot)
 	log.Infoln("Docker Plugin Path:", *dockerPluginPath)
 
 	driver := NewVDENetworkDriver(*socketRoot)
 	handler := network.NewHandler(driver)
 
-	handler.ServeUnix("root", "vde2")
+	handler.ServeUnix("root", PluginName)
 }

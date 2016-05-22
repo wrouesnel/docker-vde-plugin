@@ -74,11 +74,20 @@ func PathNotExist(path string) bool {
 }
 
 func PathIsDir(path string) bool {
-	st, err := os.Stat(path);
+	st, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return false
 	}
 	return st.IsDir()
+}
+
+func PathIsSocket(path string) bool {
+	st, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+
+	return st.Mode()&os.ModeSocket != 0
 }
 
 // Check for successful execution and return stdout and stderr as strings
