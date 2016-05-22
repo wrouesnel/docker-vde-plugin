@@ -161,8 +161,8 @@ func NewIPAMNetworkPool(inp *network.IPAMData) (IPAMNetworkPool, error) {
 		return IPAMNetworkPool{}, errors.New("Could not parse IPAM address pool")
 	}
 
-	ip := net.ParseIP(inp.Gateway)
-	if ip == nil {
+	ip, _, err := net.ParseCIDR(inp.Gateway)
+	if err != nil {
 		log.Errorln("Supplied Gateway was unparseable", inp.Gateway)
 		return IPAMNetworkPool{}, errors.New("Could not parse IPAM gateway")
 	}
