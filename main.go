@@ -24,7 +24,7 @@ const (
 )
 
 const (
-	InterfacePrefix string = "vdenet"
+	InterfacePrefix string = "vde"
 )
 
 // Option parameters we recognize for networks
@@ -467,7 +467,7 @@ func (this *VDENetworkDriver) DeleteNetwork(req *network.DeleteNetworkRequest) e
 		network.switchp.Process.Kill()
 		network.switchp.Wait()
 		// Delete socket directories only if we controlled the process to start with
-		os.RemoveAll(network.sockDir)
+		//os.RemoveAll(network.sockDir)
 		os.Remove(network.mgmtSock)
 	}
 	delete(this.networks, req.NetworkID)
@@ -541,6 +541,11 @@ func (this *VDENetworkDriver) CreateEndpoint(req *network.CreateEndpointRequest)
 	}
 
 	// Figure out which gateway we want to use for the IPs we've picked
+	endpoint.gateway = vdeNetwork.GetGateway(endpoint.address)
+	endpoint.gateway6 = vdeNetwork.GetGateway(endpoint.address6)
+
+	log.Debugln("Endpoint IPv4 Gateway:", endpoint.gateway.String())
+	log.Debugln("Endpoint IPv6 Gateway:", endpoint.gateway.String())
 
 	// Add the endpoint to the network
 	vdeNetwork.mtx.Lock()
