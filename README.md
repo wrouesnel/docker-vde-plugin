@@ -16,6 +16,11 @@ processes to link them to the switch process.
 # Example Usage
 
 ## Getting Started
+Install dependencies;
+```bash
+apt-get install -y vde2
+```
+
 Starting the process:
 ```bash
 sudo docker-vde-plugin --log-level debug
