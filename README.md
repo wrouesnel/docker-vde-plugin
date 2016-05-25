@@ -73,6 +73,13 @@ qemu-system-x86_64 -enabel-kvm -m 512M \
 The virtual machine then boots, and can connect and talk to the
 container network seamlessly over a simulated ethernet connection.
 
+## Note on VDE socket paths
+`vde_switch` and `vde_plug2tap` both send the absolute path of their socket
+directories to allow them to communicate. This means that you should pass the
+absolute path of the socket directory to any additional container or VDE service
+you want to join to the network manually. It's not a problem for the plugin 
+because that stays in the host namespace.
+
 ### Benefits
 The benefits of this mode of operation is in testing disk-images in
 virtual machines, without needing to launch many separate images for
