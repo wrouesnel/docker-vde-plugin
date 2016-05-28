@@ -1,4 +1,4 @@
-*Pre-Release - this is not fully tested, though it is functional*
+[![Build Status](https://travis-ci.org/wrouesnel/docker-vde-plugin.svg?branch=master)](https://travis-ci.org/wrouesnel/docker-vde-plugin)
 
 # VDE2 Network Plugin for Docker
 This is a small network plugin intended to allow using VDE2 networks via Tap
