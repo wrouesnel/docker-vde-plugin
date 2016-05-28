@@ -2,7 +2,7 @@ package fsutil
 
 import (
 	"bytes"
-	. "github.com/CommBank/zbi.os-build-image/logutil"
+	. "github.com/wrouesnel/docker-vde-plugin/logutil"
 	"github.com/kardianos/osext"
 	"github.com/wrouesnel/go.log"
 	"io"

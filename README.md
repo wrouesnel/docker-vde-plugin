@@ -40,6 +40,18 @@ docker run -it --net=vdetest --ip=192.168.123.2 ubuntu:wily /bin/bash
 Note: at the current time there is no support for dynamically assigning
 IP addresses to containers.
 
+## Running as a docker container
+The plugin should be able to run as a docker container.
+
+```bash
+docker run --net=host --privileged \
+    -v /run/docker/plugins:/run/docker/plugins \
+    -v /run/docker-vde-plugin:/run/docker-vde-plugin \
+    wrouesnel/docker-vde-plugin:latest
+```
+
+This mode of operation is not extensively tested yet.
+
 ## Using with KVM/QEMU
 You need a version of KVM/QEMU with VDE2 support built in. Ubuntu does
 not ship this by default, despite shipping `vde2` binaries. It is simple
