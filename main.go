@@ -713,9 +713,12 @@ func (this *VDENetworkDriver) Join(req *network.JoinRequest) (*network.JoinRespo
 	*failedDeviceSetup = false
 
 	r := &network.JoinResponse{
-		InterfaceName: network.InterfaceName{vdeEndpoint.tapDevName, InterfacePrefix},
-		Gateway:       vdeEndpoint.GetIPv4Gateway(),
-		GatewayIPv6:   vdeEndpoint.GetIPv6Gateway(),
+		InterfaceName: network.InterfaceName{
+			SrcName:   vdeEndpoint.tapDevName,
+			DstPrefix: InterfacePrefix,
+		},
+		Gateway:     vdeEndpoint.GetIPv4Gateway(),
+		GatewayIPv6: vdeEndpoint.GetIPv6Gateway(),
 	}
 
 	return r, nil
