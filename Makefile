@@ -18,7 +18,7 @@ $(PROGNAME): $(GO_SRC)
 
 # Take a go build and turn it into a minimal container.
 docker: $(PROGNAME)
-	docker run --name $(BUILD_CONTAINER) ubuntu:wily "apt-get update && apt-get install -y vde2"
+	docker run --name $(BUILD_CONTAINER) ubuntu:wily /bin/bash -c "apt-get update && apt-get install -y vde2"
 	docker cp $(PROGNAME) $(BUILD_CONTAINER):/$(PROGNAME)
 	docker commit -c "ENTRYPOINT [ \"$(PROGNAME)\" ]" $(BUILD_CONTAINER) $(CONTAINER_NAME)
 	docker rm $(BUILD_CONTAINER)
