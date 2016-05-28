@@ -12,7 +12,7 @@ all: vet test $(PROGNAME)
 
 # Simple go build
 $(PROGNAME): $(GO_SRC)
-	CGO_ENABLED=0 GOOS=linux go build -a \
+	GOOS=linux go build -a \
 	-ldflags "-extldflags '-static' -X main.Version=$(VERSION)" \
 	-o $(PROGNAME) .
 
