@@ -329,10 +329,13 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 	var createSockets string
 	var socketGroup string
 	if req.Options != nil {
-		socketName, _ = req.Options[NetworkOptionSwitchSocket].(string)
-		managementSocketName, _ = req.Options[NetworkOptionSwitchManagementSocket].(string)
-		createSockets, _ = req.Options[NetworkOptionsAllowCreate].(string)
-		socketGroup, _ = req.Options[NetworkOptionsSocketGroup].(string)
+		if req.Options["com.docker.network.generic"] != nil {
+			dockerCliOptions := req.Options["com.docker.network.generic"].(map[string]interface{})
+			socketName, _ = dockerCliOptions[NetworkOptionSwitchSocket].(string)
+			managementSocketName, _ = dockerCliOptions[NetworkOptionSwitchManagementSocket].(string)
+			createSockets, _ = dockerCliOptions[NetworkOptionsAllowCreate].(string)
+			socketGroup, _ = dockerCliOptions[NetworkOptionsSocketGroup].(string)
+		}
 	}
 
 	pool4 := make([]IPAMNetworkPool, 0)
