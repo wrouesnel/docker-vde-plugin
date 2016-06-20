@@ -1,0 +1,12 @@
+[Unit]
+Description=Docker VDE Network Plugin          
+Documentation=https://github.com/wrouesnel/docker-vde-plugin
+Before=docker.service
+Requires=docker.service
+
+[Service]
+ExecStart=/usr/local/bin/docker-vde-plugin --log-level=debug
+
+[Install]
+WantedBy=multi-user.target
+
