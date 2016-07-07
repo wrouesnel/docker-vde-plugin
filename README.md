@@ -40,6 +40,22 @@ docker run -it --net=vdetest --ip=192.168.123.2 ubuntu:wily /bin/bash
 Note: at the current time there is no support for dynamically assigning
 IP addresses to containers.
 
+## Network Options
+These options can be passed to a network when it is created via
+the command line or `docker-compose`.
+
+* `socket_dir` : specify an existing vde_switch socket directory to
+  associate with a network.
+* `create_sockets` : when used with `socket_dir` forces the plugin to
+  start the vde_switch process if it does not already exist. This is a
+  handy way to daisy-chain networks out-of-band from docker's handling,
+  or to create networks to use with KVM/Qemu and docker together.
+* `management_socket` : specify the path to the management socket for
+  an existing `vde_switch` process. Harmless to leave out because we
+  don't currently use it for anything.
+* `socket_group_` : specify the group own for the created socket. Useful
+  when you need to use it with user-space processes without privileges.
+
 ## Running as a docker container
 The plugin should be able to run as a docker container.
 
