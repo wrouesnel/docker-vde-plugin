@@ -404,6 +404,17 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 	var mgmtPipe io.WriteCloser
 	if createSockets != "" {
 		var err error
+		// Check the base-path for the network exists, otherwise VDE will fail.
+		// This happens when using deep-paths with docker-compose and is a
+		// little surprising when it does. We don't clean this up afterwards,
+		// since you should've realized what you were asking.
+		socketRoot := filepath.Dir(socketName)
+		if fsutil.PathNotExist(socketRoot) {
+			if err := os.MkdirAll(socketRoot, os.FileMode(0755)); err != nil {
+				return errors.New("Socket root directory did not exist, and couldn't make it.")
+			}
+		}
+
 		// Start the VDE switch for the new network
 		cmdArgs := []string{
 			"--sock", socketName,
