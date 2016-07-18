@@ -15,6 +15,8 @@ import (
 	"sync"
 
 	"github.com/wrouesnel/docker-vde-plugin/fsutil"
+	"strconv"
+	"time"
 )
 
 const (
@@ -33,7 +35,16 @@ const (
 	NetworkOptionsAllowCreate string = "create_sockets"
 	// Specify the group owner for the created socket.
 	NetworkOptionsSocketGroup string = "socket_group"
+	// Specify the number of switch ports (default is 32)
+	NetworkOptionsNumSwitchports string = "num_switchports"
 )
+
+const NetworkDefaultNumSwitchports int64 = 32
+
+// vde_switch might just fail on startup. Since we need to hand control back to
+// docker almost immediately, we implement a fixed start-up timeout to make sure
+// it's still running.
+const VdeSwitchGracePeriod time.Duration = time.Millisecond * 100
 
 // Implements network.Driver
 type VDENetworkDriver struct {
@@ -101,6 +112,8 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 	var managementSocketName string
 	var createSockets string
 	var socketGroup string
+	var numSwitchPortsStr string
+	
 	if req.Options != nil {
 		if req.Options["com.docker.network.generic"] != nil {
 			dockerCliOptions := req.Options["com.docker.network.generic"].(map[string]interface{})
@@ -108,6 +121,7 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 			managementSocketName, _ = dockerCliOptions[NetworkOptionSwitchManagementSocket].(string)
 			createSockets, _ = dockerCliOptions[NetworkOptionsAllowCreate].(string)
 			socketGroup, _ = dockerCliOptions[NetworkOptionsSocketGroup].(string)
+			numSwitchPortsStr, _ = dockerCliOptions[NetworkOptionsNumSwitchports].(string)
 		}
 	}
 
@@ -130,6 +144,18 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 		}
 		pool6 = append(pool6, driverPool)
 	}
+
+	numSwitchports := NetworkDefaultNumSwitchports
+	{
+		var err error
+		if numSwitchPortsStr != "" {
+			numSwitchports, err = strconv.ParseInt(numSwitchPortsStr, 10, 32)
+			if err != nil {
+				return errors.New(fmt.Sprintf("Unparseable number of switch ports requested: %v %v", numSwitchPortsStr, err))
+			}
+		}
+	}
+	log.Debugln("Using vde_switch size:", numSwitchports)
 
 	// There's a few options here:
 	// - make a socket in the default location
@@ -175,6 +201,7 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 
 	var cmd *exec.Cmd
 	var mgmtPipe io.WriteCloser
+	var cmdErrCh chan error
 	if createSockets != "" {
 		var err error
 		// Check the base-path for the network exists, otherwise VDE will fail.
@@ -191,7 +218,9 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 		// Start the VDE switch for the new network
 		cmdArgs := []string{
 			"--sock", socketName,
-			"--mgmt", managementSocketName}
+			"--mgmt", managementSocketName,
+			"--numports", fmt.Sprintf("%v", numSwitchports),
+		}
 
 		// If group specified, add it
 		if socketGroup != "" {
@@ -206,6 +235,22 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 		if err := cmd.Start(); err != nil {
 			return errors.New("Error starting vde_switch for network.")
 		}
+
+		// Spawn a goroutine to wait for the switch to exit.
+		cmdErrCh = make(chan error)
+		go func() {
+			cmdErrCh <- cmd.Wait()
+			close(cmdErrCh)
+			log.Infoln("vde_switch process has exited.")
+		}()
+		// Start the VDE switch grace period.
+		<- time.After(VdeSwitchGracePeriod)
+		select {
+		case <- cmdErrCh:
+			return errors.New("Error starting vde_switch for network. Use --log-level debug to look for errors.")
+		default: // Do nothing - process still up.
+			log.Debugln("vde_switch still up after grace-period.")
+		}
 	}
 
 	// Stash the network info
@@ -214,6 +259,7 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 		mgmtSock:         managementSocketName,
 		mgmtPipe:         mgmtPipe,
 		switchp:          cmd,
+		switchpCh:		  cmdErrCh,
 		pool4:            pool4,
 		pool6:            pool6,
 		networkEndpoints: make(VDENetworkEndpoints),
@@ -439,6 +485,12 @@ func (this *VDENetworkDriver) Join(req *network.JoinRequest) (*network.JoinRespo
 	vdeNetwork.mtx.Lock()
 	defer vdeNetwork.mtx.Unlock()
 	vdeEndpoint, _ := vdeNetwork.networkEndpoints[req.EndpointID]
+
+	// Check that the network is actually running!
+	if vdeNetwork.IsRunning() == false {
+		log.Errorln("Attempting to join a failed network.")
+		return nil, errors.New("Network switch process has exited.")
+	}
 
 	// It shouldn't really be possible to get here. For now fail, in future,
 	// maybe blow away the old endpoint if it's hanging around?

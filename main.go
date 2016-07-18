@@ -28,6 +28,7 @@ func main() {
 		"ip",
 		"vde_switch",
 		"vde_plug2tap",
+		"slirpvde",
 	)
 
 	flag.Set("log.level", *loglevel)

@@ -16,6 +16,8 @@ type VDENetworkDesc struct {
 	mgmtPipe io.WriteCloser
 	// vde_switch process
 	switchp *exec.Cmd
+	// Channel for vde_switch Wait() call
+	switchpCh <-chan error
 	// IPAM data for this network
 	pool4 []IPAMNetworkPool
 	pool6 []IPAMNetworkPool
@@ -23,6 +25,23 @@ type VDENetworkDesc struct {
 	networkEndpoints VDENetworkEndpoints
 	// Mutex for networkEndpoints
 	mtx sync.RWMutex
+}
+
+// Check that the container switchp process exists, and is attached to an
+// executing process. For switches not under our control, this always returns
+// true.
+func (this *VDENetworkDesc) IsRunning() bool {
+	if this.switchpCh != nil {
+		select {
+		case <- this.switchpCh:
+			// Closed channel means the process exited
+			return false
+		default:
+			// Running process means its fine
+			return true
+		}
+	}
+	return true
 }
 
 // For a given IP, find a suitable gateway IP in the current network. Return nil

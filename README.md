@@ -98,7 +98,7 @@ docker run -it --net=vdekvm --ip=192.168.123.2 ubuntu:wily /bin/bash
 But we can also link a virtual machine into the same network easily
 with a command line like the following:
 ```bash
-qemu-system-x86_64 -enabel-kvm -m 512M \
+qemu-system-x86_64 -enable-kvm -m 512M \
     -netdev vde,id=vde0,sock=/home/will/mynetwork \
     -device e1000,netdev=vde0 -hda someDiskImage.qcow2
 ```
