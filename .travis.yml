@@ -9,15 +9,28 @@ script:
 - make all
 - make docker
 after_success:
-- if [ $TRAVIS_PULL_REQUEST != "true" ]; then docker login -e $DOCKER_EMAIL -u $DOCKER_USER
-  -p $DOCKER_PASS ; export TAG=`if [ "$TRAVIS_BRANCH" == "master" ]; then echo "latest";
-  else echo $TRAVIS_BRANCH ; fi` ; docker tag $DOCKER_IMAGE:$TRAVIS_BUILD_NUMBER $DOCKER_IMAGE:$TAG
-  ; if [ ! -z "$TRAVIS_TAG" ]; then docker tag $DOCKER_IMAGE:$TRAVIS_BUILD_NUMBER
-  $DOCKER_IMAGE:$TRAVIS_TAG ; fi ; docker rmi $DOCKER_IMAGE:$TRAVIS_BUILD_NUMBER ;
-  docker push $DOCKER_IMAGE ; fi
+- if [ $TRAVIS_PULL_REQUEST != "true" ]; then 
+    docker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS ; 
+    export TAG=`if [ "$TRAVIS_BRANCH" == "master" ]; then echo "latest"; else echo $TRAVIS_BRANCH ; fi` ;
+
+    docker tag $DOCKER_IMAGE:$TRAVIS_BUILD_NUMBER $DOCKER_IMAGE:$TAG ;
+    if [ ! -z "$TRAVIS_TAG" ]; then 
+        docker tag $DOCKER_IMAGE:$TRAVIS_BUILD_NUMBER $DOCKER_IMAGE:$TRAVIS_TAG ; 
+    fi ; 
+    docker rmi $DOCKER_IMAGE:$TRAVIS_BUILD_NUMBER ;
+    docker push $DOCKER_IMAGE ; 
+
+    docker tag $DIND_IMAGE:$TRAVIS_BUILD_NUMBER $DIND_IMAGE:$TAG ;
+    if [ ! -z "$TRAVIS_TAG" ]; then 
+        docker tag $DIND_IMAGE:$TRAVIS_BUILD_NUMBER $DIND_IMAGE:$TRAVIS_TAG ; 
+    fi ; 
+    docker rmi $DIND_IMAGE:$TRAVIS_BUILD_NUMBER ;
+    docker push $DIND_IMAGE ;
+  fi
 env:
   global:
   - DOCKER_IMAGE=wrouesnel/docker-vde-plugin
+  - DIND_IMAGE=wrouesnel/docker-vde-plugin-dind
   - secure: uU08Vd6lylmqqwvU4KJHVEUu2+CDWHoh1/743O8rJXrwODW3xqNsOsVvU/67iTOZs4YalMpExnY/vu38M+/pcnTZNYnuiCY2vigGqulX5yYwaMmBWjkZjWDtJZ9WG9YPSXHXfUcxLwPU9oubC+Q3H81qffsMkA9yWx5EpbIMzK0anIfNC0+N650kYsrXuFCV55lQR1Q0cLVP9SHi3k5IZk9ZvJ/WGgWoNPltb383UiOa3rwF9kHhiVM4oSypQU9gFkRyukYAVC9Gnbs8QfLQZnRMy/T2h7YZvQwEkjW9ToebDih37LRN3lfvMKldLTKz/wvbyc+zT4cR8QrRKpMMlThLvmXdzmEKL0FmJ+OthJ+fIwftmFaFXpfnsWjDOnUcDAXRpAc1IJLAVcCrIkTZjRkX2CfPOpIeTMz5F32uTFgxpreM059KWKu9I2FmxgxdiMl97xA/aIZYpavDJQjQAH/p44z5FkWLMalCtNW/yWA2hyeTuOi0tyUcITKJsh9GXaOBBisICv2w62oCiQREirHRUvpqtu97OWBJ768uVvzWgVo1vzbLDFCPIraI4ViQyXGLzFvq+NTZPpotSnjBOhS36RTON/rd38OIgtSkvg3XjJMz5aiWWc0c/7uePICq5PeTukbpxo4jZbEgMJ41yeWomT+2KLZrTxy9m79wTsM=
   - secure: GJkA/vnFIAcWVCl23nJjwPoIT3higbvqmS7yEgzI5OGglM9zpQPFsyBVO8rPDPwIN6B/vQgjyMHYiAaE5RammfpeoUY8ZZaxgetnAkYkmowH5X5CqmVzjmNfmVxDkQITXOL5M4NYcyepAzeCSZ+vaJl5+ZooCa2J56cquBZwXKk5SRd/zULhTLgxcFPs0BSmUzHGoUC9xybJy0ojaJ1A9s5Vcwfljt/rgdwguMtexYL+UKcnucjFmTw+610rJjblb3IBfKnC4I4kNUUc6Pupir1/SkuHQFzHZqwNJTELn4nDP56MOC/yMNgNUnBtYNzFRRLRZ8Ac7oxu7cMMGupNIEKHQJY2y1Da8i9wr6qhVWY0/fBn1BdjNKE+6kU00EcPmbQl0GworX1bSbPgac+ptIgJsNZ2xrSBuzEP0Wp8NGxfGPPwasQc3+ejT6AuUA5/aOKDJ/DYR5KwJIk4kDIQMruXADtDaRs7mP13EcIRu/w/Sye8rXdFifZsEKRyz5sB/DTfM0xJbP9zWmdAFuQEg4Owy0a3u9ko6ME+Ayp8EfPRxB8Zh0VVIDNw2E+7Kxitu3LK+3zF/3MtNbZYCS936M5LbuZAX6v2QFB71yKpzBeM0/tY4XM/FoCMikBLf1Ka91XbC1sSweMkluNKfW/47m//W73W1jIRyAJUXByMqAE=
   - secure: lfZ7WUgKGlRJjGRcTnx1XSBkWlZbwPo81MjHiRu7jdFUsWMoRs7oY8HE8L+ZU9NKHVgCnoGnYTpkLO2el++E4cqYqDk5mB9P6/KmTgrALH8osZTPVHuQKQ6FcBPwvXR3USpLKxgwhBcJ3tpsj+HMjm72HnlplD7s5Q+uGDR6iXb8SbDB6r6UBvEumngNTYgfLndQRaWs8DHyX5E/lt+a7hIyTerhGODTeFusGi4pxbjx14/7b2GfdIDkvFmHzkR5MJPZqTAYFodTyA+Ix9OFmq9adVylv9oNjzMEj7XLHGDTFBM6B0yIhvikjCtaiNQbUkiWVPLGFfRCm3UVVl1kwno7h+4kmjW2MVngDYDy02RbCtZWC5lwsulR0akgdQNNgnp721O5m/wvpbFpm5toV4Tvvwf4d74dNnO2XgBf7q3Rgv/Yu5IZlMrGjrf+G/426sX+Z/9k3Ujjgbi4rXrQRzddIolLG9YeyQaYFtrQ4LqArYyBAILfa3954Aab7U0t+1YfYJveuxTP09anaulIIjnw8f8/IgmWouR8MTsJX0mvMHjwCqDrZS3cLDu4Waf3zd4oNJFEBI+zBaqv27bRgAkDtk5sYOUy5McutGh27eMa7bNjU8k7CQCs7UT0p4IzPEGt1Eg6G4M/xpd1BzXJpkJ0U0gf6/GDzKIaip9Y45o=

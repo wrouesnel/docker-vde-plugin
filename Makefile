@@ -6,6 +6,7 @@ PROGNAME := docker-vde-plugin
 VERSION ?= git:$(shell git rev-parse HEAD)
 TAG ?= latest
 CONTAINER_NAME ?= wrouesnel/$(PROGNAME):$(TAG)
+DIND_CONTAINER_NAME ?= wrouesnel/$(PROGNAME)-dind:$(TAG)
 BUILD_CONTAINER ?= $(PROGNAME)_build
 
 all: vet test $(PROGNAME)
@@ -22,6 +23,11 @@ docker: $(PROGNAME)
 	docker cp $(PROGNAME) $(BUILD_CONTAINER):/$(PROGNAME)
 	docker commit -c "ENTRYPOINT [ \"$(PROGNAME)\" ]" $(BUILD_CONTAINER) $(CONTAINER_NAME)
 	docker rm $(BUILD_CONTAINER)
+
+# Take a go build and create a docker-in-docker container.
+dind: $(PROGNAME)
+	cp -f $(PROGNAME) docker/
+	docker build -t $(CONTAINER_NAME):dind-1.12.1-block-$(TAG) docker
 
 vet:
 	go vet .
