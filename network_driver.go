@@ -113,7 +113,7 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 	var createSockets string
 	var socketGroup string
 	var numSwitchPortsStr string
-	
+
 	if req.Options != nil {
 		if req.Options["com.docker.network.generic"] != nil {
 			dockerCliOptions := req.Options["com.docker.network.generic"].(map[string]interface{})
@@ -251,6 +251,16 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 		default: // Do nothing - process still up.
 			log.Debugln("vde_switch still up after grace-period.")
 		}
+
+		// We need to consume the error in order to allow the process to
+		// actually exit later on.
+		go func() {
+			// TODO: if the process *does* exit early, it might be an idea to
+			// delete the network from our knowledge. But we have no path to
+			// inform docker this is happening.
+			err := <- cmdErrCh
+			log.Debugln("vde_switch exited from Wait():", err)
+		}()
 	}
 
 	// Stash the network info
@@ -567,7 +577,8 @@ func (this *VDENetworkDriver) Leave(req *network.LeaveRequest) error {
 	if !this.networkExists(req.NetworkID) {
 		return errors.New("Network does not exist")
 	}
-	// Grab the network and hold onto it till we finish. This is so no-one deletes it while we're setting up an endpoint.
+	// Grab the network and hold onto it till we finish. This is so
+	// no-one deletes it while we're setting up an endpoint.
 	this.mtx.RLock()
 	defer this.mtx.RUnlock()
 	vdeNetwork, _ := this.networks[req.NetworkID]
@@ -589,7 +600,6 @@ func (this *VDENetworkDriver) Leave(req *network.LeaveRequest) error {
 	// in the root namespace yet and we don't know where it is. As a kind of
 	// hacky work-around, we rely on the fact that DeleteEndpoint will be called
 	// right after this, and delete it there, when it should be back.
-
 	return nil
 }
 
@@ -613,6 +623,7 @@ func (this *VDENetworkDriver) RevokeExternalConnectivity(req *network.RevokeExte
 	return nil
 }
 
+// Implements both the Network and IPAM interfaces.
 func NewVDENetworkDriver(socketRoot string) *VDENetworkDriver {
 	return &VDENetworkDriver{
 		socketRoot: socketRoot,

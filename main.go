@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/docker/go-plugins-helpers/ipam"
 	"github.com/docker/go-plugins-helpers/network"
 	"github.com/wrouesnel/go.log"
 
@@ -9,10 +10,13 @@ import (
 
 	"github.com/wrouesnel/docker-vde-plugin/fsutil"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/docker/go-plugins-helpers/sdk"
+	"os/user"
+	"strconv"
 )
 
 const (
-	PluginName string = "vde"
+	NetworkPluginName string = "vde"
 )
 
 // TODO: do some checks to make sure we properly clean up
@@ -47,7 +51,27 @@ func main() {
 	log.Infoln("Docker Plugin Path:", *dockerPluginPath)
 
 	driver := NewVDENetworkDriver(*socketRoot)
-	handler := network.NewHandler(driver)
 
-	handler.ServeUnix("root", PluginName)
+	handler := sdk.NewHandler()
+
+	network.InitMux(handler, driver)
+	ipam.InitMux(handler, driver)
+
+	// For the time being we only support serving on a unix-host since cross-
+	// host or remote support doesn't make sense.
+	if (*dockerPluginPath).Scheme != "unix" {
+		log.Panicln("Only the \"unix\" paths are currently supported.")
+	}
+
+	u, err := user.Lookup("root")
+	if err != nil {
+		log.Panicln("Error looking up user identity for plugin.")
+	}
+
+	gid, err := strconv.Atoi(u.Gid)
+	if err != nil {
+		log.Panicln("Could not convert gid to integer:", u.Gid, err)
+	}
+
+	handler.ServeUnix((*dockerPluginPath).Path, gid)
 }

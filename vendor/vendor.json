@@ -3,84 +3,135 @@
 	"ignore": "test",
 	"package": [
 		{
+			"checksumSHA1": "L9njXCkN30+qHaLayiiA2Q9jDlY=",
 			"path": "github.com/Microsoft/go-winio",
-			"revision": "9f57cbbcbcb41dea496528872a4f0e37a4f7ae98",
-			"revisionTime": "2016-04-06T17:10:02-07:00"
+			"revision": "fff283ad5116362ca252298cfc9b95828956d85d",
+			"revisionTime": "2017-02-01T00:43:30Z"
 		},
 		{
+			"checksumSHA1": "YD7op+BalfdUK0lb28y6Yex6cBM=",
 			"path": "github.com/Sirupsen/logrus",
-			"revision": "4b6ea7319e214d98c938f12692336f7ca9348d6b",
-			"revisionTime": "2016-03-17T14:11:10Z"
+			"revision": "c078b1e43f58d563c74cebe63c85789e76ddb627",
+			"revisionTime": "2017-02-07T11:49:02Z"
 		},
 		{
+			"checksumSHA1": "KmjnydoAbofMieIWm+it5OWERaM=",
 			"path": "github.com/alecthomas/template",
-			"revision": "14fd436dd20c3cc65242a9f396b61bfc8a3926fc",
-			"revisionTime": "2015-12-01T11:57:09+11:00"
+			"revision": "a0175ee3bccc567396460bf5acd36800cb10c49c",
+			"revisionTime": "2016-04-05T07:15:01Z"
 		},
 		{
+			"checksumSHA1": "3wt0pTXXeS+S93unwhGoLIyGX/Q=",
 			"path": "github.com/alecthomas/template/parse",
-			"revision": "14fd436dd20c3cc65242a9f396b61bfc8a3926fc",
-			"revisionTime": "2015-12-01T11:57:09+11:00"
+			"revision": "a0175ee3bccc567396460bf5acd36800cb10c49c",
+			"revisionTime": "2016-04-05T07:15:01Z"
 		},
 		{
+			"checksumSHA1": "fCc3grA7vIxfBru7R3SqjcW+oLI=",
 			"path": "github.com/alecthomas/units",
 			"revision": "2efee857e7cfd4f3d0138cc3cbb1b4966962b93a",
-			"revisionTime": "2015-10-22T17:55:26+11:00"
+			"revisionTime": "2015-10-22T06:55:26Z"
 		},
 		{
+			"checksumSHA1": "RBwpnMpfQt7Jo7YWrRph0Vwe+f0=",
 			"path": "github.com/coreos/go-systemd/activation",
-			"revision": "9590e2380f142e7d49952483a31dfdf089ae16ab",
-			"revisionTime": "2016-04-20T00:17:09+10:00"
+			"revision": "e97b35f834b17eaa82afe3d44715c34736bfa12b",
+			"revisionTime": "2017-02-01T10:47:36Z"
 		},
 		{
+			"checksumSHA1": "e8qgBHxXbij3RVspqrkeBzMZ564=",
 			"path": "github.com/coreos/go-systemd/util",
-			"revision": "9590e2380f142e7d49952483a31dfdf089ae16ab",
-			"revisionTime": "2016-04-20T00:17:09+10:00"
+			"revision": "e97b35f834b17eaa82afe3d44715c34736bfa12b",
+			"revisionTime": "2017-02-01T10:47:36Z"
 		},
 		{
-			"path": "github.com/docker/go-connections/sockets",
-			"revision": "f549a9393d05688dff0992ef3efd8bbe6c628aeb",
-			"revisionTime": "2016-03-04T14:48:11-08:00"
+			"checksumSHA1": "O8c/VKtW34XPJNNlyeb/im8vWSI=",
+			"path": "github.com/coreos/pkg/dlopen",
+			"revision": "1c941d73110817a80b9fa6e14d5d2b00d977ce2a",
+			"revisionTime": "2017-02-06T20:20:45Z"
 		},
 		{
+			"checksumSHA1": "f1W0bR56Z2V42nN8NZeQzcyQqdU=",
+			"path": "github.com/docker/go-connections",
+			"revision": "7da10c8c50cad14494ec818dcdfb6506265c0086",
+			"revisionTime": "2017-02-03T23:56:24Z",
+			"tree": true
+		},
+		{
+			"checksumSHA1": "nKUrAFJfNPPqCRuet7s+c8/YIzI=",
+			"origin": "github.com/wrouesnel/go-plugins-helpers/ipam",
+			"path": "github.com/docker/go-plugins-helpers/ipam",
+			"revision": "e74004739a752f3f39a774aac96c29ec5fab9e3f",
+			"revisionTime": "2017-01-13T04:08:18Z"
+		},
+		{
+			"checksumSHA1": "YDV4oPGq8CaYyTx/bN83CyHi/iE=",
+			"origin": "github.com/wrouesnel/go-plugins-helpers/network",
 			"path": "github.com/docker/go-plugins-helpers/network",
-			"revision": "726bdcf4333dc9bd02860d7397a4ab4797864ea5",
-			"revisionTime": "2016-04-19T20:14:43+02:00"
+			"revision": "e74004739a752f3f39a774aac96c29ec5fab9e3f",
+			"revisionTime": "2017-01-13T04:08:18Z"
 		},
 		{
+			"checksumSHA1": "ruTpnNmX5pJkCxajgXkq/CFSYro=",
+			"origin": "github.com/wrouesnel/go-plugins-helpers/sdk",
 			"path": "github.com/docker/go-plugins-helpers/sdk",
-			"revision": "726bdcf4333dc9bd02860d7397a4ab4797864ea5",
-			"revisionTime": "2016-04-19T20:14:43+02:00"
+			"revision": "e74004739a752f3f39a774aac96c29ec5fab9e3f",
+			"revisionTime": "2017-01-13T04:08:18Z"
 		},
 		{
+			"checksumSHA1": "g+afVQQVopBLiLB5pFZp/8s6aBs=",
 			"path": "github.com/kardianos/osext",
-			"revision": "6e7f843663477789fac7c02def0d0909e969b4e5",
-			"revisionTime": "2015-05-28T07:23:15-07:00"
+			"revision": "c2c54e542fb797ad986b31721e1baedf214ca413",
+			"revisionTime": "2016-08-11T00:15:26Z"
 		},
 		{
+			"checksumSHA1": "KVZRinwxB3LsuMUkOZw5/U2WgE8=",
 			"path": "github.com/opencontainers/runc/libcontainer/user",
-			"revision": "865f4a685de6060398d0dd827a426e3b38810c0a",
-			"revisionTime": "2016-04-07T10:29:49-07:00"
+			"revision": "b263a43430ac6996a4302b891688544225197294",
+			"revisionTime": "2017-02-06T18:33:42Z"
 		},
 		{
+			"checksumSHA1": "vf6HUfelaktEywKn4UibMhDF3xk=",
+			"path": "github.com/wrouesnel/docker-vde-plugin",
+			"revision": "23351621931de2c7defe8a75935eaeeac24fbe5a",
+			"revisionTime": "2016-11-05T11:08:27Z"
+		},
+		{
+			"checksumSHA1": "BZyd8KzfW+Z2K7ZuGbr1rTm5BF4=",
 			"path": "github.com/wrouesnel/go.log",
 			"revision": "943d79281e59b697452224306f4bb2bfbfcbd2a2",
-			"revisionTime": "2016-05-15T22:19:16+10:00"
+			"revisionTime": "2016-05-15T12:19:16Z"
 		},
 		{
+			"checksumSHA1": "kPXJHuFjxaLPC0W4ZWZu7UsD9GU=",
 			"path": "github.com/ziutek/utils/netaddr",
 			"revision": "d8fe304b0db2bae8e6709e46d19b355926c9f7fc",
-			"revisionTime": "2013-12-02T13:39:50+01:00"
+			"revisionTime": "2013-12-02T12:39:50Z"
 		},
 		{
+			"checksumSHA1": "LvdVRE0FqdR68SvVpRkHs1rxhcA=",
 			"path": "golang.org/x/net/proxy",
-			"revision": "e7da8edaa52631091740908acaf2c2d4c9b3ce90",
-			"revisionTime": "2016-03-05T22:47:48Z"
+			"revision": "236b8f043b920452504e263bc21d354427127473",
+			"revisionTime": "2017-02-06T03:21:01Z"
 		},
 		{
+			"checksumSHA1": "uTQtOqR0ePMMcvuvAIksiIZxhqU=",
+			"path": "golang.org/x/sys/unix",
+			"revision": "7a6e5648d140666db5d920909e082ca00a87ba2c",
+			"revisionTime": "2017-02-01T04:15:14Z"
+		},
+		{
+			"checksumSHA1": "kQB2wRB3twjUp615F6zEwGHjNe0=",
+			"path": "golang.org/x/sys/windows",
+			"revision": "7a6e5648d140666db5d920909e082ca00a87ba2c",
+			"revisionTime": "2017-02-01T04:15:14Z"
+		},
+		{
+			"checksumSHA1": "SeYI7DRWrd0Ku+CLavuwIz3EEmQ=",
 			"path": "gopkg.in/alecthomas/kingpin.v2",
-			"revision": "8cccfa8eb2e3183254457fb1749b2667fbc364c7",
-			"revisionTime": "2016-02-17T20:03:01+11:00"
+			"revision": "e9044be3ab2a8e11d4e1f418d12f0790d57e8d70",
+			"revisionTime": "2016-08-29T10:30:05Z"
 		}
-	]
+	],
+	"rootPath": "github.com/wrouesnel/docker-vde-plugin"
 }

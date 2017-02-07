@@ -118,3 +118,7 @@ The benefits of this mode of operation is in testing disk-images in
 virtual machines, without needing to launch many separate images for
 network services which are presumed to "just exist" on the network, or
 which might normally be docker containers themselves.
+
+# Development Notes
+Vendoring is managed with `govendor`. You can do a blind update of vendored
+packages with `govendor fetch +vendor`.
