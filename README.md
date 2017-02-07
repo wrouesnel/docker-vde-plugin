@@ -122,3 +122,7 @@ which might normally be docker containers themselves.
 # Development Notes
 Vendoring is managed with `govendor`. You can do a blind update of vendored
 packages with `govendor fetch +vendor`.
+
+## Documentation References
+* ipam: https://github.com/docker/libnetwork/blob/master/docs/ipam.md
+* network: https://github.com/docker/libnetwork/blob/master/docs/design.md
