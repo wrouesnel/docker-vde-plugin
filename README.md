@@ -106,6 +106,31 @@ qemu-system-x86_64 -enable-kvm -m 512M \
 The virtual machine then boots, and can connect and talk to the
 container network seamlessly over a simulated ethernet connection.
 
+## The vde IPAM driver
+This plugin implements its own IPAM driver. The main feature is that clashing
+subnets are *allowed* by the driver, since the network built by 
+docker-vde-plugin is a layer 2 network. If you explicitely need to do IPAM,
+you should use the docker default IPAM driver to enforce unique subnets.
+
+### Default Gateways
+Because `docker-vde-plugin` has no concept of the normal bridge-style default
+gateways, they are handled quite differently. The IPAM driver will accept any
+default gateway IP assignment, ignoring the subpool in favor of the IP pool.
+
+The address is also not marked as in-use unless a container requests it
+explicitely out of the subpool, but it will also never be assigned 
+automatically.
+
+This allows launching containers on the VDE network intended to act as the
+default gateway between VDE and the host or other networking technologies.
+
+#### Gateway Rules Summary
+* Gateway IP can be assigned manually, but is never assigned automatically.
+* A container with the gateway IP must have another network to provide its
+  default route.
+  * Use `docker-compose` or
+  * Manually connect the container to the vde network after it is setup.
+
 ## Note on VDE socket paths
 `vde_switch` and `vde_plug2tap` both send the absolute path of their socket
 directories to allow them to communicate. This means that you should pass the

@@ -79,6 +79,12 @@
 			"revisionTime": "2017-01-13T04:08:18Z"
 		},
 		{
+			"checksumSHA1": "evtidxvlOG9eHsL+5h8rXSWUzCM=",
+			"path": "github.com/docker/libnetwork/netlabel",
+			"revision": "11a5883eedbc4552e12c59e457111ccc67789878",
+			"revisionTime": "2016-10-26T20:00:22Z"
+		},
+		{
 			"checksumSHA1": "g+afVQQVopBLiLB5pFZp/8s6aBs=",
 			"path": "github.com/kardianos/osext",
 			"revision": "c2c54e542fb797ad986b31721e1baedf214ca413",
@@ -91,6 +97,12 @@
 			"revisionTime": "2017-02-06T18:33:42Z"
 		},
 		{
+			"checksumSHA1": "zmC8/3V4ls53DJlNTKDZwPSC/dA=",
+			"path": "github.com/satori/go.uuid",
+			"revision": "b061729afc07e77a8aa4fad0a2fd840958f1942a",
+			"revisionTime": "2016-09-27T10:08:44Z"
+		},
+		{
 			"checksumSHA1": "vf6HUfelaktEywKn4UibMhDF3xk=",
 			"path": "github.com/wrouesnel/docker-vde-plugin",
 			"revision": "23351621931de2c7defe8a75935eaeeac24fbe5a",
@@ -101,6 +113,12 @@
 			"path": "github.com/wrouesnel/go.log",
 			"revision": "943d79281e59b697452224306f4bb2bfbfcbd2a2",
 			"revisionTime": "2016-05-15T12:19:16Z"
+		},
+		{
+			"checksumSHA1": "JBdLqpnnXbE0znIRGvEbJ8CDwqc=",
+			"path": "github.com/wrouesnel/multihttp",
+			"revision": "fb4e9b221e7639ee9ff8b1d71270cb7721c2f16d",
+			"revisionTime": "2015-07-22T01:58:18Z"
 		},
 		{
 			"checksumSHA1": "kPXJHuFjxaLPC0W4ZWZu7UsD9GU=",
