@@ -37,6 +37,8 @@ const (
 	NetworkOptionsSocketGroup string = "socket_group"
 	// Specify the number of switch ports (default is 32)
 	NetworkOptionsNumSwitchports string = "num_switchports"
+	// Specify a path or network to link to this network
+	NetworkOptionsJoinNetwork string = "join_network"
 )
 
 const NetworkDefaultNumSwitchports int64 = 32
@@ -52,6 +54,13 @@ type VDENetworkDriver struct {
 	socketRoot string
 	// Currently managed networks
 	networks map[string]*VDENetworkDesc
+	// IPAM data - docker isolates IPAM, but since pool ranges will target
+	// matching networks we just need to do some separate tracking. It does
+	// mean in practice we store this information twice.
+	ipam map[string]*IPAMNetworkPool
+	// Protect ipam. Hold read-lock when updating pools.
+	ipamMtx  sync.RWMutex
+
 	mtx      sync.RWMutex
 }
 
@@ -80,6 +89,38 @@ func (this *VDENetworkDriver) networkExists(networkId string) bool {
 func (this *VDENetworkDriver) GetCapabilities() (*network.CapabilitiesResponse, error) {
 	// Technically, VDE can be global, but we have no way to know that.
 	return &network.CapabilitiesResponse{Scope: network.LocalScope}, nil
+}
+
+func (this *VDENetworkDriver) AllocateNetwork(req *network.AllocateNetworkRequest) (*network.AllocateNetworkResponse, error) {
+	log := log.With("NetworkID", req.NetworkID)
+
+	// Log a lot of information about what's happening since it's useful for debugging
+	log.Infoln("AllocateNetwork request received")
+	for _, ipData := range req.IPv4Data {
+		log.With("AddressSpace", ipData.AddressSpace).
+			With("Gateway", ipData.Gateway).
+			With("Pool", ipData.Pool).Debugln("IPv4 Network Options")
+	}
+	for _, ipData := range req.IPv6Data {
+		log.With("AddressSpace", ipData.AddressSpace).
+			With("Gateway", ipData.Gateway).
+			With("Pool", ipData.Pool).Debugln("IPv6 Network Options")
+	}
+	netOptionsLogs := log
+	for k, v := range req.Options {
+		netOptionsLogs = netOptionsLogs.With(k, v)
+	}
+	netOptionsLogs.Debugln("Network options")
+
+	return nil, errors.New("unimplemented")
+}
+
+func (this *VDENetworkDriver) FreeNetwork(req *network.FreeNetworkRequest) error {
+	log := log.With("NetworkID", req.NetworkID)
+
+	log.Infoln("FreeNetwork request received")
+
+	return errors.New("unimplemented")
 }
 
 func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) error {
@@ -113,7 +154,8 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 	var createSockets string
 	var socketGroup string
 	var numSwitchPortsStr string
-	
+	//var joinNetwork string // TODO
+
 	if req.Options != nil {
 		if req.Options["com.docker.network.generic"] != nil {
 			dockerCliOptions := req.Options["com.docker.network.generic"].(map[string]interface{})
@@ -122,11 +164,12 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 			createSockets, _ = dockerCliOptions[NetworkOptionsAllowCreate].(string)
 			socketGroup, _ = dockerCliOptions[NetworkOptionsSocketGroup].(string)
 			numSwitchPortsStr, _ = dockerCliOptions[NetworkOptionsNumSwitchports].(string)
+			//joinNetwork, _ = dockerCliOptions[NetworkOptionsJoinNetwork].(string)
 		}
 	}
 
-	pool4 := make([]IPAMNetworkPool, 0)
-	pool6 := make([]IPAMNetworkPool, 0)
+	pool4 := make([]*IPAMNetworkPool, 0)
+	pool6 := make([]*IPAMNetworkPool, 0)
 
 	// Parse network IP data.
 	for _, ipampool := range req.IPv4Data {
@@ -251,6 +294,16 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 		default: // Do nothing - process still up.
 			log.Debugln("vde_switch still up after grace-period.")
 		}
+
+		// We need to consume the error in order to allow the process to
+		// actually exit later on.
+		go func() {
+			// TODO: if the process *does* exit early, it might be an idea to
+			// delete the network from our knowledge. But we have no path to
+			// inform docker this is happening.
+			err := <- cmdErrCh
+			log.Debugln("vde_switch exited from Wait():", err)
+		}()
 	}
 
 	// Stash the network info
@@ -567,7 +620,8 @@ func (this *VDENetworkDriver) Leave(req *network.LeaveRequest) error {
 	if !this.networkExists(req.NetworkID) {
 		return errors.New("Network does not exist")
 	}
-	// Grab the network and hold onto it till we finish. This is so no-one deletes it while we're setting up an endpoint.
+	// Grab the network and hold onto it till we finish. This is so
+	// no-one deletes it while we're setting up an endpoint.
 	this.mtx.RLock()
 	defer this.mtx.RUnlock()
 	vdeNetwork, _ := this.networks[req.NetworkID]
@@ -589,7 +643,6 @@ func (this *VDENetworkDriver) Leave(req *network.LeaveRequest) error {
 	// in the root namespace yet and we don't know where it is. As a kind of
 	// hacky work-around, we rely on the fact that DeleteEndpoint will be called
 	// right after this, and delete it there, when it should be back.
-
 	return nil
 }
 
@@ -613,9 +666,11 @@ func (this *VDENetworkDriver) RevokeExternalConnectivity(req *network.RevokeExte
 	return nil
 }
 
+// Implements both the Network and IPAM interfaces.
 func NewVDENetworkDriver(socketRoot string) *VDENetworkDriver {
 	return &VDENetworkDriver{
 		socketRoot: socketRoot,
 		networks:   make(map[string]*VDENetworkDesc),
+		ipam: make(map[string]*IPAMNetworkPool),
 	}
 }

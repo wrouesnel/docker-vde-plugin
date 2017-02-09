@@ -8,31 +8,35 @@ import (
 )
 
 const (
-	manifest = `{"Implements": ["NetworkDriver"]}`
+	pluginType = "NetworkDriver"
 	// LocalScope is the correct scope response for a local scope driver
 	LocalScope = `local`
 	// GlobalScope is the correct scope response for a global scope driver
 	GlobalScope = `global`
 
-	capabilitiesPath   = "/NetworkDriver.GetCapabilities"
-	createNetworkPath  = "/NetworkDriver.CreateNetwork"
-	deleteNetworkPath  = "/NetworkDriver.DeleteNetwork"
-	createEndpointPath = "/NetworkDriver.CreateEndpoint"
-	endpointInfoPath   = "/NetworkDriver.EndpointOperInfo"
-	deleteEndpointPath = "/NetworkDriver.DeleteEndpoint"
-	joinPath           = "/NetworkDriver.Join"
-	leavePath          = "/NetworkDriver.Leave"
-	discoverNewPath    = "/NetworkDriver.DiscoverNew"
-	discoverDeletePath = "/NetworkDriver.DiscoverDelete"
-	programExtConnPath = "/NetworkDriver.ProgramExternalConnectivity"
-	revokeExtConnPath  = "/NetworkDriver.RevokeExternalConnectivity"
+	capabilitiesPath    = "/NetworkDriver.GetCapabilities"
+	allocateNetworkPath = "/NetworkDriver.AllocateNetwork"
+	freeNetworkPath     = "/NetworkDriver.FreeNetwork"
+	createNetworkPath   = "/NetworkDriver.CreateNetwork"
+	deleteNetworkPath   = "/NetworkDriver.DeleteNetwork"
+	createEndpointPath  = "/NetworkDriver.CreateEndpoint"
+	endpointInfoPath    = "/NetworkDriver.EndpointOperInfo"
+	deleteEndpointPath  = "/NetworkDriver.DeleteEndpoint"
+	joinPath            = "/NetworkDriver.Join"
+	leavePath           = "/NetworkDriver.Leave"
+	discoverNewPath     = "/NetworkDriver.DiscoverNew"
+	discoverDeletePath  = "/NetworkDriver.DiscoverDelete"
+	programExtConnPath  = "/NetworkDriver.ProgramExternalConnectivity"
+	revokeExtConnPath   = "/NetworkDriver.RevokeExternalConnectivity"
 )
 
 // Driver represent the interface a driver must fulfill.
 type Driver interface {
 	GetCapabilities() (*CapabilitiesResponse, error)
 	CreateNetwork(*CreateNetworkRequest) error
+	AllocateNetwork(*AllocateNetworkRequest) (*AllocateNetworkResponse, error)
 	DeleteNetwork(*DeleteNetworkRequest) error
+	FreeNetwork(*FreeNetworkRequest) error
 	CreateEndpoint(*CreateEndpointRequest) (*CreateEndpointResponse, error)
 	DeleteEndpoint(*DeleteEndpointRequest) error
 	EndpointInfo(*InfoRequest) (*InfoResponse, error)
@@ -47,6 +51,32 @@ type Driver interface {
 // CapabilitiesResponse returns whether or not this network is global or local
 type CapabilitiesResponse struct {
 	Scope string
+}
+
+// AllocateNetworkRequest requests allocation of new network by manager
+type AllocateNetworkRequest struct {
+	// A network ID that remote plugins are expected to store for future
+	// reference.
+	NetworkID string
+
+	// A free form map->object interface for communication of options.
+	Options map[string]string
+
+	// IPAMData contains the address pool information for this network
+	IPv4Data, IPv6Data []IPAMData
+}
+
+// AllocateNetworkResponse is the response to the AllocateNetworkRequest.
+type AllocateNetworkResponse struct {
+	// A free form plugin specific string->string object to be sent in
+	// CreateNetworkRequest call in the libnetwork agents
+	Options map[string]string
+}
+
+// FreeNetworkRequest is the request to free allocated network in the manager
+type FreeNetworkRequest struct {
+	// The ID of the network to be freed.
+	NetworkID string
 }
 
 // CreateNetworkRequest is sent by the daemon when a network needs to be created
@@ -183,14 +213,16 @@ type Handler struct {
 
 // NewHandler initializes the request handler with a driver implementation.
 func NewHandler(driver Driver) *Handler {
-	h := &Handler{driver, sdk.NewHandler(manifest)}
-	h.initMux()
+	h := &Handler{driver, sdk.NewHandler()}
+	InitMux(h, driver)
 	return h
 }
 
-func (h *Handler) initMux() {
+// InitMux initializes a compatible HTTP mux with routes for the specified driver. Can be used
+// to combine multiple drivers into a single plugin mux.
+func InitMux(h sdk.Mux, driver Driver) {
 	h.HandleFunc(capabilitiesPath, func(w http.ResponseWriter, r *http.Request) {
-		res, err := h.driver.GetCapabilities()
+		res, err := driver.GetCapabilities()
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -210,7 +242,7 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		err = h.driver.CreateNetwork(req)
+		err = driver.CreateNetwork(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -218,13 +250,42 @@ func (h *Handler) initMux() {
 		}
 		sdk.EncodeResponse(w, make(map[string]string), "")
 	})
+	h.HandleFunc(allocateNetworkPath, func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Entering go-plugins-helpers allocatenetwork")
+		req := &AllocateNetworkRequest{}
+		err := sdk.DecodeRequest(w, r, req)
+		if err != nil {
+			return
+		}
+		res, err := driver.AllocateNetwork(req)
+		if err != nil {
+			msg := err.Error()
+			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
+			return
+		}
+		sdk.EncodeResponse(w, res, "")
+	})
 	h.HandleFunc(deleteNetworkPath, func(w http.ResponseWriter, r *http.Request) {
 		req := &DeleteNetworkRequest{}
 		err := sdk.DecodeRequest(w, r, req)
 		if err != nil {
 			return
 		}
-		err = h.driver.DeleteNetwork(req)
+		err = driver.DeleteNetwork(req)
+		if err != nil {
+			msg := err.Error()
+			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
+			return
+		}
+		sdk.EncodeResponse(w, make(map[string]string), "")
+	})
+	h.HandleFunc(freeNetworkPath, func(w http.ResponseWriter, r *http.Request) {
+		req := &FreeNetworkRequest{}
+		err := sdk.DecodeRequest(w, r, req)
+		if err != nil {
+			return
+		}
+		err = driver.FreeNetwork(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -238,10 +299,11 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		res, err := h.driver.CreateEndpoint(req)
+		res, err := driver.CreateEndpoint(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
+			return
 		}
 		sdk.EncodeResponse(w, res, "")
 	})
@@ -251,7 +313,7 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		err = h.driver.DeleteEndpoint(req)
+		err = driver.DeleteEndpoint(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -265,7 +327,7 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		res, err := h.driver.EndpointInfo(req)
+		res, err := driver.EndpointInfo(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -278,7 +340,7 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		res, err := h.driver.Join(req)
+		res, err := driver.Join(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -291,7 +353,7 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		err = h.driver.Leave(req)
+		err = driver.Leave(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -305,7 +367,7 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		err = h.driver.DiscoverNew(req)
+		err = driver.DiscoverNew(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -319,7 +381,7 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		err = h.driver.DiscoverDelete(req)
+		err = driver.DiscoverDelete(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -333,7 +395,7 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		err = h.driver.ProgramExternalConnectivity(req)
+		err = driver.ProgramExternalConnectivity(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -347,7 +409,7 @@ func (h *Handler) initMux() {
 		if err != nil {
 			return
 		}
-		err = h.driver.RevokeExternalConnectivity(req)
+		err = driver.RevokeExternalConnectivity(req)
 		if err != nil {
 			msg := err.Error()
 			sdk.EncodeResponse(w, NewErrorResponse(msg), msg)
@@ -355,4 +417,6 @@ func (h *Handler) initMux() {
 		}
 		sdk.EncodeResponse(w, make(map[string]string), "")
 	})
+
+	h.AddImplementation(pluginType)
 }
