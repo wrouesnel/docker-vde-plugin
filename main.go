@@ -14,24 +14,35 @@ import (
 	"github.com/wrouesnel/multihttp"
 
 	"github.com/wrouesnel/docker-vde-plugin/fsutil"
+	"github.com/wrouesnel/docker-vde-plugin/assets"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"github.com/docker/go-plugins-helpers/sdk"
 	"net/url"
 	"runtime"
+	"io/ioutil"
+	"path"
 )
 
 const (
 	NetworkPluginName string = "vde"
 )
 
-// TODO: do some checks to make sure we properly clean up
 func main() {
+	os.Exit(realMain())
+}
+
+// TODO: do some checks to make sure we properly clean up
+func realMain() int {
 	dockerPluginPath := kingpin.Flag("docker-net-plugins", "Listen path for the plugin.").Default("unix:///run/docker/plugins/vde.sock,unix:///run/docker/plugins/vde-ipam.sock").String()
 	socketRoot := kingpin.Flag("socket-root", "Path where networks and sockets should be created").Default("/run/docker-vde-plugin").String()
 	loglevel := kingpin.Flag("log-level", "Logging Level").Default("info").String()
 	logformat := kingpin.Flag("log-format", "If set use a syslog logger or JSON logging. Example: logger:syslog?appname=bob&local=7 or logger:stdout?json=true. Defaults to stderr.").Default("stderr").String()
-	vdePlugBin := kingpin.Flag("vde_plug", "Path to the vde_plug binary to use.").Default("vde_plug").String()
+	vdePlugBin := kingpin.Flag("vde_plug", "Path to the vde_plug binary to use. If not specified, a precompiled version is unpacked.").String()
+	vdeSwitchBin := kingpin.Flag("vde_switch", "Path to the vde_switch binary to use. If not specified, a precompiled version is unpacked.").String()
 	kingpin.Parse()
+
+	flag.Set("log.level", *loglevel)
+	flag.Set("log.format", *logformat)
 
 	exitCh := make(chan int)
 	sigCh := make(chan os.Signal, 1)
@@ -59,15 +70,60 @@ func main() {
 		}
 	}()
 
+	// Do we need an extraction directory for unpacking internal binaries?
+	var extractDir string
+	if *vdePlugBin == "" || *vdeSwitchBin == "" {
+		var err error
+		extractDir, err = ioutil.TempDir("", "docker-vde-plugin")
+		if err != nil {
+			log.Panicln("could not make a temporary directory for internal binary extraction")
+		}
+		log.Debugln("Will extract files to:", extractDir)
+		// Clean up on exit.
+		defer func () {
+			log.Debugln("Removing", extractDir)
+			os.RemoveAll(extractDir)
+		}()
+	}
+
+	// If nothing specified, we want to unpack and sudo own from ourselves.
+	var actualVdePlugBin, actualVdeSwitchBin string
+	log.Debugln("Have pre-compiled assets:", strings.Join(assets.AssetNames(), " "))
+	if *vdePlugBin != "" {
+		actualVdePlugBin = *vdePlugBin
+	} else {
+		// Unpack the version in the plugin.
+		log.Debugln("Unpacking vde_plug binary...")
+		actualVdePlugBin = path.Join(extractDir, "vde_plug")
+		ioutil.WriteFile(actualVdePlugBin, assets.MustAsset("vde_plug"), os.FileMode(0700))
+		defer func() {
+			log.Debugln("Removing", actualVdePlugBin)
+			os.Remove(actualVdePlugBin)
+		}()
+	}
+
+	if *vdeSwitchBin != "" {
+		actualVdeSwitchBin = *vdeSwitchBin
+	} else {
+		// Unpack the version in the plugin.
+		log.Debugln("Unpacking vde_switch binary...")
+		actualVdeSwitchBin = path.Join(extractDir, "vde_switch")
+		ioutil.WriteFile(actualVdeSwitchBin, assets.MustAsset("vde_switch"), os.FileMode(0700))
+		defer func() {
+			log.Debugln("Removing", actualVdeSwitchBin)
+			os.Remove(actualVdeSwitchBin)
+		}()
+	}
+
+	log.Debugln("Using vde_plug binary:", actualVdePlugBin)
+	log.Debugln("Using vde_switch binary:", actualVdeSwitchBin)
+
 	// Check for the programs we need to actually work
 	fsutil.MustLookupPaths(
 		"ip",
-		"vde_switch",
-		*vdePlugBin,
+		actualVdePlugBin,
+		actualVdeSwitchBin,
 	)
-
-	flag.Set("log.level", *loglevel)
-	flag.Set("log.format", *logformat)
 
 	if !fsutil.PathExists(*socketRoot) {
 		err := os.MkdirAll(*socketRoot, os.FileMode(0777))
@@ -81,7 +137,7 @@ func main() {
 	log.Infoln("VDE default socket directories:", *socketRoot)
 	log.Infoln("Docker Plugin Path:", *dockerPluginPath)
 
-	driver := NewVDENetworkDriver(*socketRoot, "vde_switch", *vdePlugBin)
+	driver := NewVDENetworkDriver(*socketRoot, actualVdeSwitchBin, actualVdePlugBin)
 	ipamDriver := &IPAMDriver{driver}
 
 	handler := sdk.NewHandler()
@@ -132,5 +188,5 @@ func main() {
 		l.Close()
 	}
 
-	os.Exit(exitCode)
+	return exitCode
 }

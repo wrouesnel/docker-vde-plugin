@@ -1,5 +1,8 @@
-docker-vde-plugin
+build/*
 .idea
+3rdparty/*
+.build
+assets/bindata.go
 
 ### Go template
 # Compiled Object files, Static and Dynamic libs (Shared Objects)

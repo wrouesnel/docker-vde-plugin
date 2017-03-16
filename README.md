@@ -18,7 +18,7 @@ processes to link them to the switch process.
 ## Getting Started
 Install dependencies;
 ```bash
-apt-get install -y vde2
+apt-get install -y iproute2
 ```
 
 Starting the process:
@@ -37,8 +37,11 @@ Starting a container:
 docker run -it --net=vdetest --ip=192.168.123.2 ubuntu:wily /bin/bash
 ```
 
-Note: at the current time there is no support for dynamically assigning
-IP addresses to containers.
+Note: docker-vde-plugin tries to be as low setup cost as possible. To this end
+statically compiled binaries of `vde_switch` and `vde_plug` are included into
+the binary as part of the build process and extracted on each execution. If you
+experience problems, you may wish to install your distributions `vde2` package
+(these binaries are not entirely static yet but should be broadly compatible).
 
 ## Network Options
 These options can be passed to a network when it is created via
@@ -55,6 +58,8 @@ the command line or `docker-compose`.
   don't currently use it for anything.
 * `socket_group_` : specify the group own for the created socket. Useful
   when you need to use it with user-space processes without privileges.
+* `num_switchports` : specify the number of ports to create on the switch
+  (i.e. number of containers which can be attached). Default is 32.
 
 ## Running as a docker container
 The plugin should be able to run as a docker container.
