@@ -34,6 +34,14 @@ dind: $(DST_ROOT)/$(PROGNAME)
 vet:
 	go vet .
 
+# Check code conforms to go fmt
+style:
+	! gofmt -s -l $(GO_SRC) 2>&1 | read 2>/dev/null
+
+# Format the code
+fmt:
+	gofmt -s -w $(GO_SRC)
+
 # Build the integration test binary. Don't run it because we need sudo.
 docker-vde-plugin.test: $(GO_SRC)
 	go test -c -v -cover -covermode count -o test-docker-vde-plugin
