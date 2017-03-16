@@ -58,6 +58,10 @@ type VDENetworkDriver struct {
 	// matching networks we just need to do some separate tracking. It does
 	// mean in practice we store this information twice.
 	ipam map[string]*IPAMNetworkPool
+	// Path to the vde_switch executable to use to setup switches
+	vdeSwitchBin string
+	// Path to the vde_plug binary to use to setup tap devices.
+	vdePlugBin string
 	// Protect ipam. Hold read-lock when updating pools.
 	ipamMtx  sync.RWMutex
 
@@ -270,7 +274,7 @@ func (this *VDENetworkDriver) CreateNetwork(req *network.CreateNetworkRequest) e
 			cmdArgs = append(cmdArgs, "--group", socketGroup)
 		}
 
-		cmd := fsutil.LoggedCommand("vde_switch", cmdArgs...)
+		cmd := fsutil.LoggedCommand(this.vdeSwitchBin, cmdArgs...)
 		mgmtPipe, err = cmd.StdinPipe()
 		if err != nil {
 			return errors.New("Error setting up stdin pipe for vde_switch.")
@@ -589,7 +593,7 @@ func (this *VDENetworkDriver) Join(req *network.JoinRequest) (*network.JoinRespo
 	}
 
 	// Plug the interface into the network switch
-	cmd := fsutil.LoggedCommand("vde_plug2tap", "--sock", vdeNetwork.sockDir, vdeEndpoint.tapDevName)
+	cmd := fsutil.LoggedCommand(this.vdePlugBin, fmt.Sprintf("vde://%s",vdeNetwork.sockDir), fmt.Sprintf("tap://%s",vdeEndpoint.tapDevName))
 	cmdPipe, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, errors.New("Failed to setup vde_plug2tap mgmt pipe")
@@ -667,10 +671,13 @@ func (this *VDENetworkDriver) RevokeExternalConnectivity(req *network.RevokeExte
 }
 
 // Implements both the Network and IPAM interfaces.
-func NewVDENetworkDriver(socketRoot string) *VDENetworkDriver {
+func NewVDENetworkDriver(socketRoot string, vdeSwitchBin string, vdePlugBin string) *VDENetworkDriver {
 	return &VDENetworkDriver{
 		socketRoot: socketRoot,
 		networks:   make(map[string]*VDENetworkDesc),
 		ipam: make(map[string]*IPAMNetworkPool),
+
+		vdeSwitchBin: vdeSwitchBin,
+		vdePlugBin: vdePlugBin,
 	}
 }

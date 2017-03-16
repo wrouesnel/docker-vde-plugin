@@ -30,6 +30,7 @@ func main() {
 	socketRoot := kingpin.Flag("socket-root", "Path where networks and sockets should be created").Default("/run/docker-vde-plugin").String()
 	loglevel := kingpin.Flag("log-level", "Logging Level").Default("info").String()
 	logformat := kingpin.Flag("log-format", "If set use a syslog logger or JSON logging. Example: logger:syslog?appname=bob&local=7 or logger:stdout?json=true. Defaults to stderr.").Default("stderr").String()
+	vdePlugBin := kingpin.Flag("vde_plug", "Path to the vde_plug binary to use.").Default("vde_plug").String()
 	kingpin.Parse()
 
 	exitCh := make(chan int)
@@ -62,9 +63,7 @@ func main() {
 	fsutil.MustLookupPaths(
 		"ip",
 		"vde_switch",
-		"vde_plug2tap",
-		"vde_plug",
-		"dpipe",
+		*vdePlugBin,
 	)
 
 	flag.Set("log.level", *loglevel)
@@ -82,7 +81,7 @@ func main() {
 	log.Infoln("VDE default socket directories:", *socketRoot)
 	log.Infoln("Docker Plugin Path:", *dockerPluginPath)
 
-	driver := NewVDENetworkDriver(*socketRoot)
+	driver := NewVDENetworkDriver(*socketRoot, "vde_switch", *vdePlugBin)
 	ipamDriver := &IPAMDriver{driver}
 
 	handler := sdk.NewHandler()
