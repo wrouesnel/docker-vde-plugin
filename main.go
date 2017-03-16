@@ -21,19 +21,23 @@ import (
 	"runtime"
 	"io/ioutil"
 	"path"
+	"net"
 )
 
 const (
+	ExecutableName = "docker-net-plugins"
 	NetworkPluginName string = "vde"
 )
 
 func main() {
-	os.Exit(realMain())
+	os.Exit(realMain(nil))
 }
 
-// TODO: do some checks to make sure we properly clean up
-func realMain() int {
-	dockerPluginPath := kingpin.Flag("docker-net-plugins", "Listen path for the plugin.").Default("unix:///run/docker/plugins/vde.sock,unix:///run/docker/plugins/vde-ipam.sock").String()
+// realMain is the actual main function, separated out for testing purposes.
+// notifyStart may be nil, but if supplied will be closed once the plugin
+// has fully initialized.
+func realMain(notifyStart chan<- struct{}) int {
+	dockerPluginPath := kingpin.Flag(ExecutableName, "Listen path for the plugin.").Default("unix:///run/docker/plugins/vde.sock,unix:///run/docker/plugins/vde-ipam.sock").String()
 	socketRoot := kingpin.Flag("socket-root", "Path where networks and sockets should be created").Default("/run/docker-vde-plugin").String()
 	loglevel := kingpin.Flag("log-level", "Logging Level").Default("info").String()
 	logformat := kingpin.Flag("log-format", "If set use a syslog logger or JSON logging. Example: logger:syslog?appname=bob&local=7 or logger:stdout?json=true. Defaults to stderr.").Default("stderr").String()
@@ -158,6 +162,17 @@ func realMain() int {
 			log.Panicln("Only the \"unix\" paths are currently supported.")
 		}
 
+		// Check if the listen addrs exist already and appear to be in use.
+		if fsutil.PathExists(u.Path) {
+			// Try and connect to it.
+			if _, err := net.Dial("unix", u.Path); err == nil {
+				log.Panicln("Bind path already in use by listening process:", u.Path)
+			} else {
+				log.Warnln("Cleaning up left-over socket:", u.Path)
+				os.Remove(u.Path)
+			}
+		}
+
 		listenAddrs = append(listenAddrs, u.String())
 	}
 
@@ -181,6 +196,12 @@ func realMain() int {
 			exitCh <- 1
 		}
 	}()
+
+	log.Infoln("Plugin listening and ready.")
+	if notifyStart != nil {
+		log.Debugln("Closing notify channel.")
+		close(notifyStart)
+	}
 
 	// Wait to exit.
 	exitCode := <- exitCh

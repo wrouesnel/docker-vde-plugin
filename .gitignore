@@ -3,6 +3,8 @@ build/*
 3rdparty/*
 .build
 assets/bindata.go
+*.test.out
+*.test
 
 ### Go template
 # Compiled Object files, Static and Dynamic libs (Shared Objects)

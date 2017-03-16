@@ -1,4 +1,6 @@
 [![Build Status](https://travis-ci.org/wrouesnel/docker-vde-plugin.svg?branch=master)](https://travis-ci.org/wrouesnel/docker-vde-plugin)
+[![Coverage Status](https://coveralls.io/repos/github/wrouesnel/docker-vde-plugin/badge.svg?branch=master)](https://coveralls.io/github/wrouesnel/docker-vde-plugin?branch=master)
+[![Go Report Card](https://goreportcard.com/badge/github.com/wrouesnel/docker-vde-plugin)](https://goreportcard.com/report/github.com/wrouesnel/docker-vde-plugin)
 
 # VDE2 Network Plugin for Docker
 This is a small network plugin intended to allow using VDE2 networks via Tap

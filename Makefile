@@ -34,8 +34,12 @@ dind: $(DST_ROOT)/$(PROGNAME)
 vet:
 	go vet .
 
-test:
-	go test -v .
+# Build the integration test binary. Don't run it because we need sudo.
+docker-vde-plugin.test: $(GO_SRC)
+	go test -c -v -cover -covermode count -o test-docker-vde-plugin
+
+test: test-docker-vde-plugin
+	sudo $(shell pwd)/docker-vde-plugin.test -test.coverprofile=docker-vde-plugin.test.out
 
 $(BINDATA): .build/go-bindata build/bin/vde_plug build/bin/vde_switch
 	mkdir -p assets

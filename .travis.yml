@@ -3,10 +3,14 @@ services:
 - docker
 language: go
 go:
-- '1.6'
+- '1.8'
+before_install:
+- go get -v github.com/mattn/goveralls
 script:
 - export TAG=$TRAVIS_BUILD_NUMBER
 - make all
+- ./concatenate_coverage cover.out *.test.out
+- $HOME/gopath/bin/goveralls -coverprofile=cover.out -service=travis-ci
 - make docker
 after_success:
 - if [ $TRAVIS_PULL_REQUEST != "true" ]; then 
